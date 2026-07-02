@@ -232,7 +232,6 @@ npm run slidev-to-pptx -- \
 
 By default this uses:
 
-- `--mode screenshot`
 - `--scale 2`, producing 1920x1080 captures for a 16:9 Slidev viewport
 - full-slide placement at `10 x 5.625` inches in PowerPoint
 
@@ -241,11 +240,11 @@ Useful options:
 ```sh
 npm run slidev-to-pptx -- slides.md output.pptx --slides 1-5
 npm run slidev-to-pptx -- slides.md output.pptx --scale 3
-npm run slidev-to-pptx -- slides.md output.pptx --mode editable
-npm run slidev-to-pptx -- slides.md output.pptx --mode hybrid
 ```
 
-`--mode editable` keeps the older DOM-to-PPTX extraction path. It is more editable, but it is not the pixel-perfect path for complex Slidev decks.
+Screenshot rendering is the only export mode. The former `editable`/`hybrid`
+DOM-extraction modes were removed: high-fidelity HTML-to-editable-PPTX is not
+reliably solvable, and this product ships pixel-perfect view-only PPTX instead.
 
 ## PPTX to Slidev
 

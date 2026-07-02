@@ -2,14 +2,12 @@
 
 import { SlidevServer } from './server.js';
 import { DOMExtractor } from './extractor.js';
-import { classifyNodes, setFontMappingMode, FontMappingMode } from './classifier.js';
 import { generatePptx } from './generator.js';
 import { IRDeck, IRSlide } from './types.js';
 import path from 'path';
 
 const SLIDE_W_IN = 10;
 const SLIDE_H_IN = 5.625;
-type RenderMode = 'screenshot' | 'editable' | 'hybrid';
 
 function usage() {
   console.log(`
@@ -20,10 +18,7 @@ Options:
   --timeout <ms>      Server startup timeout (default: 30000)
   --url <url>         Use existing Slidev server URL instead of starting one
   --slides <range>    Slide range, e.g. "1-5" or "1,3,5" (default: all)
-  --mode <mode>       Render mode: screenshot, editable, or hybrid (default: screenshot)
-  --scale <number>    Screenshot render scale for screenshot/hybrid modes (default: 2)
-  --font-mode <mode>  Font handling: exact or safe (default: exact)
-  --fallback          Alias for --mode hybrid
+  --scale <number>    Screenshot render scale (default: 2)
   --debug             Enable debug output
   --help              Show this help
 `);
@@ -44,9 +39,7 @@ async function main() {
   let timeout = 30000;
   let existingUrl = '';
   let slideRange = '';
-  let renderMode: RenderMode = 'screenshot';
   let screenshotScale = 2;
-  let fontMode: FontMappingMode = 'exact';
 
   for (let i = 2; i < args.length; i++) {
     switch (args[i]) {
@@ -70,11 +63,10 @@ async function main() {
       case '--slides': slideRange = args[++i]; break;
       case '--mode': {
         const value = (args[++i] || '').toLowerCase();
-        if (value !== 'screenshot' && value !== 'editable' && value !== 'hybrid') {
-          console.error('Invalid --mode value. Expected "screenshot", "editable", or "hybrid".');
+        if (value !== 'screenshot') {
+          console.error('Invalid --mode value. Only "screenshot" is supported.');
           process.exit(1);
         }
-        renderMode = value as RenderMode;
         break;
       }
       case '--scale': {
@@ -85,16 +77,6 @@ async function main() {
         }
         break;
       }
-      case '--font-mode': {
-        const value = (args[++i] || '').toLowerCase();
-        if (value !== 'exact' && value !== 'safe') {
-          console.error('Invalid --font-mode value. Expected "exact" or "safe".');
-          process.exit(1);
-        }
-        fontMode = value as FontMappingMode;
-        break;
-      }
-      case '--fallback': renderMode = 'hybrid'; break;
       case '--debug': process.env.DEBUG = '1'; break;
     }
   }
@@ -102,11 +84,7 @@ async function main() {
   console.log('\n=== slidev-to-pptx ===\n');
   console.log(`Deck:   ${deckPath}`);
   console.log(`Output: ${outputPath}`);
-  console.log(`Mode:   ${renderMode}`);
   console.log(`Scale:  ${screenshotScale}`);
-  console.log(`Fonts:  ${fontMode}`);
-
-  setFontMappingMode(fontMode);
 
   // Step 1: Start or connect to Slidev server
   let server: SlidevServer | null = null;
@@ -149,7 +127,7 @@ async function main() {
     const slideIndices = parseSlideRange(slideRange, totalSlides);
     console.log(`Processing slides: ${slideIndices.join(', ')}`);
 
-    // Step 5: Extract and classify each slide
+    // Step 5: Screenshot each slide
     const deck: IRDeck = {
       slideWidth: SLIDE_W_IN,
       slideHeight: SLIDE_H_IN,
@@ -158,48 +136,9 @@ async function main() {
 
     for (const idx of slideIndices) {
       console.log(`\nSlide ${idx}/${totalSlides}:`);
-
-      if (renderMode === 'screenshot') {
-        console.log('  Capturing slide screenshot...');
-        const screenshot = await extractor.screenshotSlide(baseUrl, idx);
-        deck.slides.push(createScreenshotSlide(idx, screenshot));
-        continue;
-      }
-
-      // Extract DOM
-      console.log('  Extracting DOM...');
-      const extractedSlide = await extractor.extractSlide(baseUrl, idx);
-      const nodes = extractedSlide.nodes;
-      console.log(`  Found ${nodes.length} top-level nodes`);
-
-      // Classify into IR elements
-      console.log('  Classifying elements...');
-      const elements = classifyNodes(nodes);
-      const textCount = elements.filter(e => e.type === 'text').length;
-      const imageCount = elements.filter(e => e.type === 'image').length;
-      const shapeCount = elements.filter(e => e.type === 'shape').length;
-      const tableCount = elements.filter(e => e.type === 'table').length;
-      console.log(`  Classified ${elements.length} elements (${textCount} text, ${imageCount} images, ${shapeCount} shapes, ${tableCount} tables)`);
-
-      const hasSvgImage = elements.some(e => e.type === 'image' && !!(e as any).src && ((e as any).src.startsWith('data:image/svg+xml') || /\.svg(\?|#|$)/i.test((e as any).src)));
-      // Smarter fallback: trigger when elements is empty but nodes had content
-      const hasContentButNothingClassified = elements.length === 0 && nodes.length > 3;
-      const shouldFallback = hasContentButNothingClassified || hasSvgImage;
-
-      // If fallback conditions met in hybrid mode, screenshot the whole slide
-      if (renderMode === 'hybrid' && shouldFallback) {
-        console.log('  Complex content detected, capturing fallback screenshot...');
-        const screenshot = await extractor.screenshotSlide(baseUrl, idx);
-        deck.slides.push(createScreenshotSlide(idx, screenshot, extractedSlide.backgroundColor));
-      } else {
-        const irSlide: IRSlide = {
-          index: idx,
-          backgroundColor: extractedSlide.backgroundColor,
-          backgroundImage: extractedSlide.backgroundImage,
-          elements,
-        };
-        deck.slides.push(irSlide);
-      }
+      console.log('  Capturing slide screenshot...');
+      const screenshot = await extractor.screenshotSlide(baseUrl, idx);
+      deck.slides.push(createScreenshotSlide(idx, screenshot));
     }
 
     // Step 6: Generate PPTX
@@ -217,19 +156,10 @@ async function main() {
   }
 }
 
-function createScreenshotSlide(index: number, screenshot: Buffer, backgroundColor?: string): IRSlide {
+function createScreenshotSlide(index: number, screenshot: Buffer): IRSlide {
   return {
     index,
-    backgroundColor,
-    elements: [{
-      type: 'image',
-      src: `data:image/png;base64,${screenshot.toString('base64')}`,
-      x: 0,
-      y: 0,
-      w: SLIDE_W_IN,
-      h: SLIDE_H_IN,
-      zIndex: 0,
-    }],
+    image: `data:image/png;base64,${screenshot.toString('base64')}`,
   };
 }
 

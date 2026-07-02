@@ -200,9 +200,7 @@ export class ExportService {
       mode,
     ], this.config.export.timeoutMs);
 
-    const verification = mode === 'screenshot'
-      ? await this.verifyPptx(verifyPath, outputPath, expectedSlideCount(markdown))
-      : undefined;
+    const verification = await this.verifyPptx(verifyPath, outputPath, expectedSlideCount(markdown));
 
     const completedAt = new Date().toISOString();
     await this.writeJob({
@@ -298,8 +296,7 @@ function runNode(cwd: string, args: string[], timeoutMs: number): Promise<string
 }
 
 function normalizeMode(value: string | undefined): string {
-  if (!value) return 'screenshot';
-  if (value === 'screenshot' || value === 'editable' || value === 'hybrid') return value;
+  if (!value || value === 'screenshot') return 'screenshot';
   throw Object.assign(new Error('Unsupported export mode'), { statusCode: 400 });
 }
 
