@@ -27,7 +27,7 @@ export class SlidevServer {
 
     console.log(`Starting Slidev on port ${this.port}...`);
     const cmd = process.platform === 'win32' ? 'npx.cmd' : 'npx';
-    this.proc = spawn(cmd, ['slidev', this.opts.deckPath, '--port', String(this.port), '--remote'], {
+    this.proc = spawn(cmd, ['slidev', this.opts.deckPath, '--port', String(this.port)], {
       cwd: path.dirname(this.opts.deckPath),
       stdio: ['ignore', 'pipe', 'pipe'],
       shell: false,

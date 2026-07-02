@@ -1,5 +1,9 @@
 node_modules/
 dist/
+.data/
+.env
+.env.*
+!.env.example
 *.pptx
 .DS_Store
 npm-debug.log*

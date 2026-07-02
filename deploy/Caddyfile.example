@@ -1,0 +1,31 @@
+{
+	email ops@example.com
+
+	# Optional fallback if you do not use DNS-01 wildcard certificates.
+	# Caddy calls this before issuing an on-demand certificate.
+	on_demand_tls {
+		ask http://127.0.0.1:4321/internal/tls-check
+	}
+}
+
+app.example.com {
+	reverse_proxy 127.0.0.1:4321
+}
+
+*.decks.example.com {
+	# Preferred production setup:
+	# Build Caddy with github.com/caddy-dns/digitalocean and set DO_API_TOKEN.
+	tls {
+		dns digitalocean {env.DO_API_TOKEN}
+	}
+
+	reverse_proxy 127.0.0.1:4321
+}
+
+# On-demand TLS fallback for environments where DNS-01 is not available.
+# *.decks.example.com {
+# 	tls {
+# 		on_demand
+# 	}
+# 	reverse_proxy 127.0.0.1:4321
+# }

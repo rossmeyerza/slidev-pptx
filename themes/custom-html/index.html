@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Custom HTML Deck</title>
+    <link rel="stylesheet" href="./style.css">
+  </head>
+  <body>
+    <main class="deck" aria-live="polite">
+      <section class="slide title-slide" data-title="Opening">
+        <p class="eyebrow">Custom runtime</p>
+        <h1>Custom HTML Deck</h1>
+        <p class="lead">A file-based deck rendered without Slidev, Vite, or a build step.</p>
+      </section>
+
+      <section class="slide split-slide" data-title="Why this exists">
+        <div>
+          <p class="eyebrow">The point</p>
+          <h2>Normal workspace files</h2>
+          <p>The source of truth is ordinary HTML, CSS, and JavaScript inside the deck folder.</p>
+        </div>
+        <ul>
+          <li>No framework dev server</li>
+          <li>No markdown compiler</li>
+          <li>No HMR proxy</li>
+          <li>Fast authenticated preview</li>
+        </ul>
+      </section>
+
+      <section class="slide statement-slide" data-title="Agent surface">
+        <p class="eyebrow">Agent-friendly</p>
+        <h2>The agent can edit the actual deck surface.</h2>
+        <p>Later, the model can update `index.html`, `style.css`, and assets directly rather than squeezing layout into Markdown.</p>
+      </section>
+    </main>
+
+    <nav class="deck-controls" aria-label="Slide controls">
+      <button type="button" data-prev aria-label="Previous slide">‹</button>
+      <span data-counter>1 / 1</span>
+      <button type="button" data-next aria-label="Next slide">›</button>
+    </nav>
+
+    <script src="./deck.js"></script>
+  </body>
+</html>

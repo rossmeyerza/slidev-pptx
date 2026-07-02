@@ -1,0 +1,273 @@
+/* =============================================
+   @font-face: TCCC-UnityHeadline (headings)
+   ============================================= */
+@font-face {
+  font-family: 'TCCC-UnityHeadline';
+  src: url('../../public/fonts/TCCC-UnityHeadline-Light.ttf') format('truetype');
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'TCCC-UnityHeadline';
+  src: url('../../public/fonts/TCCC-UnityHeadline Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'TCCC-UnityHeadline';
+  src: url('../../public/fonts/TCCC-UnityHeadline-Medium.ttf') format('truetype');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'TCCC-UnityHeadline';
+  src: url('../../public/fonts/TCCC-UnityHeadline Bold.ttf') format('truetype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'TCCC-UnityHeadline';
+  src: url('../../public/fonts/TCCC-UnityHeadline Black.ttf') format('truetype');
+  font-weight: 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* =============================================
+   @font-face: TCCC-UnityText (body text)
+   ============================================= */
+@font-face {
+  font-family: 'TCCC-UnityText';
+  src: url('../../public/fonts/TCCC-UnityText Light.ttf') format('truetype');
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'TCCC-UnityText';
+  src: url('../../public/fonts/TCCC-UnityText Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'TCCC-UnityText';
+  src: url('../../public/fonts/TCCC-UnityText-Medium.ttf') format('truetype');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'TCCC-UnityText';
+  src: url('../../public/fonts/TCCC-UnityText Bold.ttf') format('truetype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'TCCC-UnityText';
+  src: url('../../public/fonts/TCCC-UnityText Black.ttf') format('truetype');
+  font-weight: 900;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'TCCC-UnityText';
+  src: url('../../public/fonts/TCCC-UnityText-Italic.ttf') format('truetype');
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'TCCC-UnityText';
+  src: url('../../public/fonts/TCCC-UnityText-BoldItalic.ttf') format('truetype');
+  font-weight: 700;
+  font-style: italic;
+  font-display: swap;
+}
+
+:root {
+  /* Coca-Cola Brand Colors */
+  --coke-red: #E61D2B;
+  --coke-white: #FFFFFF;
+  
+  /* Web-Native Clean Grays */
+  --bg-color: #F9FAFB; /* Tailwind gray-50 */
+  --card-bg: #FFFFFF;
+  --text-primary: #111827; /* Tailwind gray-900 */
+  --text-secondary: #4B5563; /* Tailwind gray-600 */
+  --divider: #E5E7EB; /* Tailwind gray-200 */
+
+  /* Slidev code block overrides (these use !important internally) */
+  --slidev-code-font-size: 10px;
+  --slidev-code-line-height: 1.25;
+  --slidev-code-padding: 4px 6px;
+  --slidev-code-margin: 2px 0;
+  --slidev-code-radius: 6px;
+  --slidev-code-background: #1f2937;
+
+  /* Typography */
+  --font-heading: 'TCCC-UnityHeadline', 'Helvetica Neue', 'Inter', sans-serif;
+  --font-body: 'TCCC-UnityText', 'Helvetica Neue', 'Inter', sans-serif;
+}
+
+body {
+  font-family: var(--font-body) !important;
+  color: var(--text-primary);
+  background-color: var(--bg-color);
+  line-height: 1.4;
+  font-size: 0.72em;
+}
+
+/* Markdown paragraph / list spacing */
+p, ul, ol {
+  font-size: 0.95em;
+  margin-bottom: 0.4em;
+}
+
+li {
+  margin-bottom: 0.5em;
+}
+
+strong {
+  font-weight: 700;
+}
+
+/* Clean Typography Overrides */
+.slidev-layout h1,
+.slidev-layout h2,
+.slidev-layout h3,
+.slidev-layout h4,
+.slidev-layout h5,
+.slidev-layout h6 {
+  font-family: var(--font-heading) !important;
+  font-weight: 800;
+  color: var(--text-primary);
+  letter-spacing: -0.02em;
+  margin-bottom: 0.25em;
+}
+
+.slidev-layout h1 {
+  font-size: 2rem;
+  line-height: 1.15;
+}
+
+.slidev-layout h2 {
+  font-size: 1.15rem;
+}
+
+.slidev-layout h3 {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+/* Subtle divider styles instead of heavy PPT borders */
+hr {
+  border: none;
+  border-top: 1px solid var(--divider);
+  margin: 1rem 0;
+}
+
+/* Clean data cards / blocks */
+.data-card {
+  background: var(--card-bg);
+  border: 1px solid var(--divider);
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+}
+
+/* Code block overrides - repeated on .slidev-layout for specificity over default theme */
+.slidev-layout {
+  --slidev-code-font-size: 7px;
+  --slidev-code-line-height: 1.25;
+  --slidev-code-padding: 4px 6px;
+  --slidev-code-margin: 2px 0;
+}
+
+/* Accent text */
+.text-brand {
+  color: var(--coke-red);
+}
+
+/* Clean tables */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.75rem 0;
+  background: var(--card-bg);
+  border-radius: 6px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+
+th, td {
+  padding: 0.35rem 0.5rem;
+  text-align: left;
+  border-bottom: 1px solid var(--divider);
+  font-size: 0.85em;
+}
+
+th {
+  background-color: var(--bg-color);
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  font-size: 0.7rem;
+  letter-spacing: 0.05em;
+}
+
+tr:last-child td {
+  border-bottom: none;
+}
+
+/* =============================================
+   Entrance animations
+   ============================================= */
+
+/* Simple fade-up keyframe — no scale, no translateX, avoids conflicts with slide transitions */
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fade-down-in {
+  from {
+    opacity: 0;
+    transform: translateY(-12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Staggered children animation.
+   Delay starts AFTER the slide transition (0.5s) so they don't overlap. */
+.stagger-in > * {
+  opacity: 0;
+  animation: fade-up 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.stagger-in > *:nth-child(1) { animation-delay: 0.45s; }
+.stagger-in > *:nth-child(2) { animation-delay: 0.55s; }
+.stagger-in > *:nth-child(3) { animation-delay: 0.65s; }
+.stagger-in > *:nth-child(4) { animation-delay: 0.75s; }
+.stagger-in > *:nth-child(5) { animation-delay: 0.85s; }
+.stagger-in > *:nth-child(6) { animation-delay: 0.95s; }
+
+/* Fade down (for code blocks), also delayed past slide transition */
+.fade-down {
+  opacity: 0;
+  animation: fade-down-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) 0.5s both;
+}

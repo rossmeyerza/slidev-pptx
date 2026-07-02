@@ -1,0 +1,13 @@
+{
+  "name": "@slidev-agent-platform/basic",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Basic Slidev-compatible deck scaffold for the Slidev Agent Platform.",
+  "scripts": {
+    "dev": "slidev slides.md --open",
+    "publish": "slidev build slides.md --out dist",
+    "export:pptx": "node ../../bin/slidev-to-pptx.js slides.md dist/basic.pptx --timeout 90000",
+    "verify:pptx": "node ../../bin/slidev-to-pptx-verify.js dist/basic.pptx --slides 5 --scale 2"
+  }
+}
