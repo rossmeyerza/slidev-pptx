@@ -6,13 +6,8 @@
     "moduleResolution": "Bundler",
     "allowJs": true,
     "jsx": "react-jsx",
-    "baseUrl": ".",
-    "paths": {
-      "@app/shared": ["packages/shared/typedefs.js"],
-      "@app/permissions": ["packages/permissions/index.js"]
-    }
+    "baseUrl": "."
   },
-  "include": ["apps/**/*.js", "apps/**/*.jsx", "packages/**/*.js"],
-  "exclude": ["node_modules", "dist", "apps/web/dist", "apps/server/dist"]
+  "include": ["apps/web/**/*.js", "apps/web/**/*.jsx"],
+  "exclude": ["node_modules", "dist", "apps/web/dist"]
 }
-
