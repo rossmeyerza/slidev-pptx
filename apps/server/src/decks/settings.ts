@@ -77,14 +77,6 @@ export function formatSettings(config: AppConfig, persisted: AppSettings = {}) {
       persisted: persisted.agent ?? {},
     },
     scaffolds: persisted.scaffolds ?? {},
-    livePreview: {
-      portPoolStart: config.livePreview.portPoolStart,
-      portPoolEnd: config.livePreview.portPoolEnd,
-      maxConcurrentDecks: config.livePreview.maxConcurrentDecks,
-      deckIdleTimeoutMs: config.livePreview.deckIdleTimeoutMs,
-      crashRetryLimit: config.livePreview.crashRetryLimit,
-      crashRetryDelayMs: config.livePreview.crashRetryDelayMs,
-    },
     export: {
       concurrency: config.export.concurrency,
       timeoutMs: config.export.timeoutMs,

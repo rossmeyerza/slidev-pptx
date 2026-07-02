@@ -17,21 +17,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const defaultWebDir = path.join(repoRoot, 'apps', 'web');
   const fallbackWebDir = path.join(repoRoot, 'apps', 'server', 'public');
 
-  const livePreview = {
-    portPoolStart: parsePortValue(env.PORT_POOL_START, 5500, 'PORT_POOL_START'),
-    portPoolEnd: parsePortValue(env.PORT_POOL_END, 5599, 'PORT_POOL_END'),
-    maxConcurrentDecks: parsePositiveInt(env.MAX_CONCURRENT_DECKS, 8),
-    deckIdleTimeoutMs: parsePositiveInt(env.DECK_IDLE_TIMEOUT_MS, 20 * 60 * 1000),
-    crashRetryLimit: parseNonNegativeInt(env.DECK_CRASH_RETRY_LIMIT, 2),
-    crashRetryDelayMs: parsePositiveInt(env.DECK_CRASH_RETRY_DELAY_MS, 1000),
-  };
-  if (livePreview.portPoolStart > livePreview.portPoolEnd) {
-    throw new Error('PORT_POOL_START must be less than or equal to PORT_POOL_END');
-  }
-  if (livePreview.maxConcurrentDecks > (livePreview.portPoolEnd - livePreview.portPoolStart + 1)) {
-    throw new Error('MAX_CONCURRENT_DECKS cannot exceed the configured live preview port pool size');
-  }
-
   return {
     repoRoot,
     appRoot,
@@ -44,7 +29,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     publicBaseUrl: env.PUBLIC_BASE_URL ?? `http://${env.HOST ?? '127.0.0.1'}:${parsePort(env.PORT)}`,
     appDomain: nonEmpty(env.APP_DOMAIN),
     decksDomain: normalizeDomain(env.DECKS_DOMAIN),
-    livePreview,
     export: {
       concurrency: parsePositiveInt(env.EXPORT_CONCURRENCY, 1),
       timeoutMs: parsePositiveInt(env.EXPORT_TIMEOUT_MS, 180_000),
@@ -122,15 +106,6 @@ function parsePositiveInt(value: string | undefined, fallback: number): number {
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed < 1) {
     throw new Error(`Invalid positive integer value: ${value}`);
-  }
-  return parsed;
-}
-
-function parseNonNegativeInt(value: string | undefined, fallback: number): number {
-  if (!value) return fallback;
-  const parsed = Number(value);
-  if (!Number.isInteger(parsed) || parsed < 0) {
-    throw new Error(`Invalid non-negative integer value: ${value}`);
   }
   return parsed;
 }

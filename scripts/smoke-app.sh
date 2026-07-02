@@ -141,7 +141,6 @@ printf '%s' "$agent_runtime_payload" | grep -q '"memberModel":"smoke-member-mode
 agent_models_payload="$(curl -fsS -b "$COOKIE_JAR" "http://127.0.0.1:$PORT/api/admin/agent-models?baseUrl=http%3A%2F%2F127.0.0.1%3A$AGENT_PORT%2Fv1")"
 printf '%s' "$agent_models_payload" | grep -q '"smoke-admin-model"' || fail "admin agent models should load from provider"
 printf '%s' "$agent_models_payload" | grep -q '"smoke-member-model"' || fail "admin agent models should include member model"
-curl -fsS -b "$COOKIE_JAR" "http://127.0.0.1:$PORT/api/live-previews" | grep -q '"previews":\[\]' || fail "admin should see live preview supervisor status"
 curl -fsS -b "$COOKIE_JAR" "http://127.0.0.1:$PORT/api/scaffolds" | grep -q '"key":"commercial-profile"' || fail "commercial scaffold was not listed"
 curl -fsS -b "$COOKIE_JAR" "http://127.0.0.1:$PORT/api/scaffolds" | grep -q '"key":"basic"' || fail "basic scaffold was not listed"
 curl -fsS -b "$COOKIE_JAR" -X PATCH "http://127.0.0.1:$PORT/api/admin/settings" -H 'content-type: application/json' --data '{"scaffolds":{"defaultKey":"commercial-profile","items":{"basic":{"name":"Admin Basic","description":"Admin-only smoke scaffold","isActive":true,"minRole":"admin"},"commercial-profile":{"name":"Commercial Profile","description":"Default commercial scaffold","isActive":true,"minRole":"employee"}}}}' | grep -q '"defaultKey":"commercial-profile"' || fail "admin settings should update scaffold curation"
@@ -306,11 +305,10 @@ printf '%s' "$guard_runs_payload" | grep -q 'Member agent cannot access package 
 printf '%s' "$guard_runs_payload" | grep -q 'Member agent cannot access host filesystem paths' || fail "host filesystem guard run should be recorded"
 curl -fsS -b "$COOKIE_JAR" -X DELETE "http://127.0.0.1:$PORT/api/decks/$deck_id/lock" >/dev/null
 
-log "checking live preview API boundary"
-curl -sS -i -X POST "http://127.0.0.1:$PORT/api/decks/$deck_id/live" | grep -q '401 Unauthorized' || fail "live preview API should require auth"
+log "checking preview API boundary"
+curl -sS -i -X POST "http://127.0.0.1:$PORT/api/decks/$deck_id/live" | grep -q '401 Unauthorized' || fail "preview API should require auth"
 live_payload="$(curl -fsS -b "$COOKIE_JAR" -X POST "http://127.0.0.1:$PORT/api/decks/$deck_id/live" -H 'content-type: application/json' --data '{}')"
-printf '%s' "$live_payload" | grep -q "\"url\":\"http://$deck_id.decks.smoke.test/#/1\"" || fail "deck-domain workbench live preview should return deck host URL"
-curl -sS -i -b "$COOKIE_JAR" "http://127.0.0.1:$PORT/live/$deck_id/2" | tr -d '\r' | grep -qi "location: /live/$deck_id/#/2" || fail "live slide-number routes should redirect to hash mode"
+printf '%s' "$live_payload" | grep -q "\"url\":\"http://$deck_id.decks.smoke.test/#/1\"" || fail "deck-domain workbench preview should return deck host URL"
 curl -sS -i -X POST "http://127.0.0.1:$PORT/api/decks/$deck_id/messages" -H 'content-type: application/json' --data '{"instruction":"test"}' | grep -q '401 Unauthorized' || fail "streaming message API should require auth"
 
 log "app smoke passed"

@@ -21,7 +21,6 @@ export const queryKeys = {
   previewBuild: (id) => ['deck', id, 'preview-build'],
   collaborators: (id) => ['deck', id, 'collaborators'],
   scaffolds: ['scaffolds'],
-  livePreviews: ['admin', 'live-previews'],
   livePreview: (id) => ['deck', id, 'live-preview'],
   settings: ['admin', 'settings'],
   agentModels: (baseUrl) => ['admin', 'agent-models', baseUrl],
@@ -223,15 +222,6 @@ export function addAdminDependency(deckId, input) {
 
 export function restartDeckPreview(deckId) {
   return api(`/api/decks/${encodeURIComponent(deckId)}/admin-tools/restart-preview`, { method: 'POST', body: JSON.stringify({}) });
-}
-
-export async function listLivePreviews() {
-  const payload = await api('/api/live-previews');
-  return payload.previews ?? [];
-}
-
-export function stopLivePreview(deckId) {
-  return api(`/api/live-previews/${encodeURIComponent(deckId)}`, { method: 'DELETE' });
 }
 
 export async function getDeckAgentSettings(deckId) {

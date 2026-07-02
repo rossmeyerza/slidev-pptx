@@ -109,31 +109,25 @@ serves them through the authenticated `/runtime/:deckId/#/1` route. That path ha
 no build step, no Vite server, and no Slidev process; it is intended to test a
 file-based deck surface before migrating agent editing away from `slides.md`.
 
-In local development, the authenticated `/api/decks/:id/live` endpoint starts a
-per-deck Slidev dev server bound to `127.0.0.1` and returns a direct URL such as
-`http://127.0.0.1:5500/#/1` for the internal workbench iframe. This keeps Vite
-HMR native and avoids proxying Slidev assets through the app server. Draft,
-published, share, and export flows continue to use static Slidev builds served by
-the app.
+Previews are static: the authenticated `/api/decks/:id/live` endpoint schedules
+a background draft build and returns the preview URL for the workbench iframe
+(`/runtime/:deckId/#/1` for custom-html decks, `/draft/:deckId/#/1` otherwise).
+There are no per-deck dev servers; draft, published, share, and export flows all
+use static builds (or the file-based custom-html runtime) served by the app.
+The former per-deck Slidev dev-server supervisor and `/live/:id` proxy were
+removed as part of the move to the static HTML deck runtime.
 
-When `DECKS_DOMAIN` is set, live previews return deck-host URLs such as
+When `DECKS_DOMAIN` is set, previews return deck-host URLs such as
 `https://<deck-id>.decks.example.com/#/1`. Caddy should terminate the wildcard
 TLS certificate and reverse proxy `*.DECKS_DOMAIN` to the server; Express
-authenticates the cookie, resolves the deck id from the hostname, and proxies
-live Slidev/HMR traffic to the private localhost port. Deck-domain live previews
-are launched through the server's Slidev runner with Vite HMR pinned to the deck
-hostname, `/__hmr`, and `wss`/443 for HTTPS deployments. If no live preview is
-running, the same host serves the published build when available, otherwise the
-draft static build. See `deploy/Caddyfile.example` for the expected reverse
-proxy shape. The unauthenticated `/internal/tls-check?domain=<deck-host>`
-endpoint returns 200 only for configured deck-domain hosts backed by an existing
-deck, which supports Caddy's on-demand TLS `ask` fallback.
-Unexpected live-preview process crashes are retained in supervisor status and
-retried with bounded backoff according to `DECK_CRASH_RETRY_LIMIT` and
-`DECK_CRASH_RETRY_DELAY_MS`.
+authenticates the cookie, resolves the deck id from the hostname, and serves the
+published build when available, otherwise the draft static build. See
+`deploy/Caddyfile.example` for the expected reverse proxy shape. The
+unauthenticated `/internal/tls-check?domain=<deck-host>` endpoint returns 200
+only for configured deck-domain hosts backed by an existing deck, which supports
+Caddy's on-demand TLS `ask` fallback.
 Set `LOG_LEVEL=debug` while running `npm run dev:server` or nodemon directly to
-see preview reuse/startup timing, crash retries, export queue transitions, and
-per-request HTTP logs.
+see build timing, export queue transitions, and per-request HTTP logs.
 
 Admins can curate scaffold templates from the Admin screen without editing
 environment variables: display name, description, active status, minimum role,
@@ -145,8 +139,8 @@ employees see a focused summary of their visible decks and active work.
 
 Admins also get deck-local project tools on the deck detail screen. These create
 Vue components under `theme/components`, create custom layouts under
-`theme/layouts`, update deck `package.json` dependencies, and stop a live preview
-so it can restart cleanly. These tools are explicit admin-only endpoints; employee
+`theme/layouts`, update deck `package.json` dependencies, and trigger a draft
+preview rebuild. These tools are explicit admin-only endpoints; employee
 and client edit flows remain content-scoped to deck instructions.
 
 Admins can also override agent model settings for a single deck from the same
@@ -183,7 +177,7 @@ When `DATABASE_URL` is set, startup and `npm run db:migrate` apply SQL migration
 from `packages/db-schema`. Deck metadata is written to Postgres while deck working
 files remain on disk under `SLIDEV_AGENT_DATA_DIR/decks`. Share links are also
 written to Postgres when available. Deck owners and collaborators gate deck APIs,
-draft/published preview routes, live preview startup, exports, and deck-domain HMR upgrades. In Postgres mode,
+draft/published preview routes, exports, and deck-domain requests. In Postgres mode,
 decks are also bound to the configured app org row derived from `AUTH_ORG_NAME`
 and `AUTH_ORG_SLUG`; deck access denies records outside that app org even for
 admins. Chat history is

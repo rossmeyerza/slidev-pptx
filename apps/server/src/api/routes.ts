@@ -4,15 +4,11 @@ import { ExportService } from '../export/exporter.js';
 import { ImportService } from '../export/importer.js';
 import http from 'node:http';
 import type { ServerResponse } from 'node:http';
-import net from 'node:net';
 import path from 'node:path';
-import type { Duplex } from 'node:stream';
-import { pipeline } from 'node:stream/promises';
 import { Router, sendFile, sendHtml, sendInlineFile, sendJson, type JsonRequest } from '../core/http.js';
 import { ShareService } from '../decks/share.js';
 import { SlidevBuildService } from '../preview/slidevBuild.js';
 import { AuthService } from '../auth/auth.js';
-import { LivePreviewSupervisor } from '../preview/livePreview.js';
 import { agentApiKey, agentRunConfig, runDeckEditAgent } from '../agent/agent.js';
 import type { PgPool } from '../db/db.js';
 import { CollaboratorService } from '../decks/collaborators.js';
@@ -28,7 +24,6 @@ import { silentLogger, type ServiceLogger } from '../core/logger.js';
  */
 export function createApiRouter(
   config: AppConfig,
-  livePreviews = new LivePreviewSupervisor(config),
   pool: PgPool | null = null,
   logger: ServiceLogger = silentLogger,
 ): Router {
@@ -119,11 +114,6 @@ export function createApiRouter(
     sendJson(res, 200, { agent: formatDeckAgentSettings(config, meta.agent) });
   });
 
-  router.add('GET', '/api/live-previews', async (req, res) => {
-    await auth.requireAdmin(req);
-    sendJson(res, 200, { previews: livePreviews.list() });
-  });
-
   router.add('GET', '/internal/tls-check', async (req, res) => {
     const domain = req.urlObject.searchParams.get('domain') ?? req.headers.host ?? '';
     const deckId = deckIdFromHost(config, domain);
@@ -138,12 +128,6 @@ export function createApiRouter(
       return;
     }
     sendJson(res, 200, { ok: true });
-  });
-
-  router.add('DELETE', '/api/live-previews/:deckId', async (req, res) => {
-    await auth.requireAdmin(req);
-    await livePreviews.stop(req.params.deckId);
-    sendJson(res, 200, { ok: true, previews: livePreviews.list() });
   });
 
   router.add('GET', '/api/auth/me', async (req, res) => {
@@ -275,7 +259,6 @@ export function createApiRouter(
       title: optionalString(body.title),
       markdown: optionalString(body.markdown),
     });
-    await refreshLivePreview(livePreviews, decks, deck.meta.id);
     runtimeEvents.emit(deck.meta.id);
     scheduleDraftBuildIfNeeded(slidev, deck);
     sendJson(res, 200, await formatDeck(deck, await shares.sharesForDeck(req.params.id), chat, slidev));
@@ -286,7 +269,6 @@ export function createApiRouter(
     await requireDeckAccess(decks, collaborators, req.params.id, context.user, 'edit');
     await decks.requireEditLock(req.params.id, context.user.id);
     const deck = await recordInstruction(config, decks, chat, agentRuns, req.params.id, asObject(req.body), context.user);
-    await refreshLivePreview(livePreviews, decks, deck.meta.id);
     runtimeEvents.emit(deck.meta.id);
     scheduleDraftBuildIfNeeded(slidev, deck);
     sendJson(res, 200, await formatDeck(deck, await shares.sharesForDeck(req.params.id), chat, slidev));
@@ -297,7 +279,6 @@ export function createApiRouter(
     await requireDeckAccess(decks, collaborators, req.params.id, context.user, 'edit');
     await decks.requireEditLock(req.params.id, context.user.id);
     const deck = await recordInstruction(config, decks, chat, agentRuns, req.params.id, asObject(req.body), context.user);
-    await refreshLivePreview(livePreviews, decks, deck.meta.id);
     runtimeEvents.emit(deck.meta.id);
     scheduleDraftBuildIfNeeded(slidev, deck);
     sendJson(res, 200, await formatDeck(deck, await shares.sharesForDeck(req.params.id), chat, slidev));
@@ -317,7 +298,6 @@ export function createApiRouter(
       const deck = await recordInstruction(config, decks, chat, agentRuns, req.params.id, asObject(req.body), context.user, (event, data) => {
         sendSse(res, event, data);
       });
-      await refreshLivePreview(livePreviews, decks, deck.meta.id);
       runtimeEvents.emit(deck.meta.id);
       scheduleDraftBuildIfNeeded(slidev, deck);
       sendSse(res, 'done', { deck: await formatDeck(deck, await shares.sharesForDeck(req.params.id), chat, slidev) });
@@ -372,8 +352,8 @@ export function createApiRouter(
       sendJson(res, 200, { preview: customRuntimePreview(deck.meta.id) });
       return;
     }
-    const preview = await livePreviews.start(deck.meta.id, decks.deckPath(deck.meta.id), decks.deckFile(deck.meta.id));
-    sendJson(res, 200, { preview });
+    scheduleDraftBuild(slidev, deck.meta.id);
+    sendJson(res, 200, { preview: draftBuildPreview(config, deck.meta.id) });
   });
 
   router.add('POST', '/api/decks/:id/admin-tools/components', async (req, res) => {
@@ -419,8 +399,8 @@ export function createApiRouter(
   router.add('POST', '/api/decks/:id/admin-tools/restart-preview', async (req, res) => {
     const context = await auth.requireAdmin(req);
     await requireDeckAccess(decks, collaborators, req.params.id, context.user, 'view');
-    await livePreviews.stop(req.params.id);
-    sendJson(res, 200, { ok: true, previews: livePreviews.list() });
+    scheduleDraftBuild(slidev, req.params.id);
+    sendJson(res, 200, { ok: true });
   });
 
   router.add('DELETE', '/api/decks/:id', async (req, res) => {
@@ -544,7 +524,6 @@ export function createApiRouter(
     const deck = await shares.getSharedDeck(req.params.token);
     const body = withShareVisitorInstruction(asObject(req.body), visitor);
     const updated = await recordInstruction(config, decks, chat, agentRuns, deck.meta.id, body, shareVisitorUser(visitor));
-    await refreshLivePreview(livePreviews, decks, updated.meta.id);
     runtimeEvents.emit(updated.meta.id);
     scheduleDraftBuildIfNeeded(slidev, updated);
     sendJson(res, 200, {
@@ -706,35 +685,6 @@ export function createApiRouter(
     await sendRuntimeFile(res, decks.deckPath(req.params.id), runtimeRequestPath(req.params.path));
   });
 
-  router.add('GET', '/live/:id', async (req, res) => {
-    const context = await auth.requireUser(req);
-    await requireDeckAccess(decks, collaborators, req.params.id, context.user, 'view');
-    res.writeHead(302, { location: `/live/${encodeURIComponent(req.params.id)}/#/1` });
-    res.end();
-  });
-
-  router.add('GET', '/live/:id/', async (req, res) => {
-    const context = await auth.requireUser(req);
-    await requireDeckAccess(decks, collaborators, req.params.id, context.user, 'view');
-    const deck = await decks.get(req.params.id);
-    const preview = await livePreviews.start(deck.meta.id, decks.deckPath(deck.meta.id), decks.deckFile(deck.meta.id));
-    await proxyLivePreview(req, res, preview.port, livePreviewRequestPath(req));
-  });
-
-  router.add('GET', '/live/:id/*path', async (req, res) => {
-    const context = await auth.requireUser(req);
-    await requireDeckAccess(decks, collaborators, req.params.id, context.user, 'view');
-    const hashRedirect = livePreviewHashRedirectLocation(req);
-    if (hashRedirect) {
-      res.writeHead(302, { location: hashRedirect });
-      res.end();
-      return;
-    }
-    const deck = await decks.get(req.params.id);
-    const preview = await livePreviews.start(deck.meta.id, decks.deckPath(deck.meta.id), decks.deckFile(deck.meta.id));
-    await proxyLivePreview(req, res, preview.port, livePreviewRequestPath(req));
-  });
-
   router.add('GET', '/published/:id', async (req, res) => {
     const context = await auth.requireUser(req);
     await requireDeckAccess(decks, collaborators, req.params.id, context.user, 'view');
@@ -771,60 +721,8 @@ export function createApiRouter(
   return router;
 }
 
-export async function handleLivePreviewUpgrade(
-  config: AppConfig,
-  livePreviews: LivePreviewSupervisor,
-  pool: PgPool | null,
-  req: http.IncomingMessage,
-  socket: Duplex,
-  head: Buffer,
-): Promise<boolean> {
-  const urlObject = new URL(req.url ?? '/', 'http://localhost');
-  const match = urlObject.pathname.match(/^\/live\/([^/]+)(\/.*)?$/);
-  const hostDeckId = deckIdFromHost(config, req.headers.host);
-  if (!match && !hostDeckId) return false;
-  const deckId = hostDeckId ?? decodeURIComponent(match?.[1] ?? '');
-
-  const auth = new AuthService(config, pool);
-  const jsonReq = req as import('../core/http.js').JsonRequest;
-  jsonReq.params = { id: deckId };
-  jsonReq.urlObject = urlObject;
-  const context = await auth.currentUser(jsonReq);
-  if (!context) {
-    socket.write('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n');
-    socket.destroy();
-    return true;
-  }
-
-  const decks = new DeckStore(config, pool);
-  const collaborators = new CollaboratorService(config, pool);
-  await requireDeckAccess(decks, collaborators, jsonReq.params.id, context.user, 'view');
-  const preview = livePreviews.get(jsonReq.params.id);
-  if (!preview) {
-    socket.write('HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n');
-    socket.destroy();
-    return true;
-  }
-
-  const targetPath = `${hostDeckId ? urlObject.pathname || '/' : urlObject.pathname}${urlObject.search}`;
-  const upstream = net.connect(preview.port, '127.0.0.1', () => {
-    upstream.write(upgradeRequest(req, targetPath, preview.port));
-    if (head.length) upstream.write(head);
-    socket.pipe(upstream);
-    upstream.pipe(socket);
-  });
-  upstream.on('error', () => {
-    socket.destroy();
-  });
-  socket.on('error', () => {
-    upstream.destroy();
-  });
-  return true;
-}
-
 export async function handleDeckHostRequest(
   config: AppConfig,
-  livePreviews: LivePreviewSupervisor,
   pool: PgPool | null,
   req: http.IncomingMessage,
   res: ServerResponse,
@@ -843,12 +741,6 @@ export async function handleDeckHostRequest(
   const decks = new DeckStore(config, pool);
   const collaborators = new CollaboratorService(config, pool);
   await requireDeckAccess(decks, collaborators, deckId, context.user, 'view');
-
-  const preview = livePreviews.get(deckId);
-  if (preview) {
-    await proxyLivePreview(jsonReq, res, preview.port, urlObject.pathname);
-    return true;
-  }
 
   const slidev = new SlidevBuildService(config, decks);
   const deck = await decks.get(deckId);
@@ -1178,10 +1070,6 @@ function scheduleDraftBuildIfNeeded(slidev: SlidevBuildService, deck: DeckRecord
   scheduleDraftBuild(slidev, deck.meta.id);
 }
 
-async function refreshLivePreview(livePreviews: LivePreviewSupervisor, decks: DeckStore, deckId: string): Promise<void> {
-  await livePreviews.refresh(deckId, decks.deckPath(deckId), decks.deckFile(deckId));
-}
-
 function isCustomRuntimeDeck(deck: DeckRecord): boolean {
   return deck.meta.scaffoldKey === 'custom-html';
 }
@@ -1191,6 +1079,20 @@ function customRuntimePreview(deckId: string) {
     deckId,
     url: `/runtime/${deckId}/#/1`,
     status: 'running',
+    startedAt: new Date().toISOString(),
+    lastActivityAt: Date.now(),
+    restartAttempts: 0,
+  };
+}
+
+function draftBuildPreview(config: AppConfig, deckId: string) {
+  const url = config.decksDomain
+    ? `${config.publicBaseUrl.startsWith('https://') ? 'https' : 'http'}://${deckId}.${config.decksDomain}/#/1`
+    : draftDeckUrl(deckId);
+  return {
+    deckId,
+    url,
+    status: 'draft',
     startedAt: new Date().toISOString(),
     lastActivityAt: Date.now(),
     restartAttempts: 0,
@@ -1571,70 +1473,3 @@ function isAllowedRuntimeAsset(requestPath: string): boolean {
   return true;
 }
 
-async function proxyLivePreview(req: JsonRequest, res: ServerResponse, port: number, requestPath: string): Promise<void> {
-  const targetPath = `${requestPath}${req.urlObject.search}`;
-  await new Promise<void>((resolve, reject) => {
-    const upstream = http.request({
-      host: '127.0.0.1',
-      port,
-      path: targetPath,
-      method: req.method,
-      headers: livePreviewHeaders(req.headers, port),
-    }, (upstreamRes) => {
-      res.writeHead(upstreamRes.statusCode ?? 502, upstreamRes.headers);
-      pipeline(upstreamRes, res).then(resolve, reject);
-    });
-    upstream.on('error', reject);
-    upstream.end();
-  });
-}
-
-function livePreviewRequestPath(req: JsonRequest): string {
-  if (!isHtmlNavigationRequest(req)) return req.urlObject.pathname;
-  const base = `/live/${encodeURIComponent(req.params.id)}/`;
-  if (req.urlObject.pathname === base) return req.urlObject.pathname;
-  const relativePath = req.urlObject.pathname.slice(base.length);
-  if (relativePath && !path.posix.extname(relativePath)) return base;
-  return req.urlObject.pathname;
-}
-
-function livePreviewHashRedirectLocation(req: JsonRequest): string | undefined {
-  const base = `/live/${encodeURIComponent(req.params.id)}/`;
-  const relativePath = req.urlObject.pathname.slice(base.length).replace(/\/$/, '');
-  if (!/^\d+$/.test(relativePath)) return undefined;
-  return `${base}#/${relativePath}${req.urlObject.search}`;
-}
-
-function isHtmlNavigationRequest(req: JsonRequest): boolean {
-  const accept = req.headers.accept;
-  if (!accept) return false;
-  const values = Array.isArray(accept) ? accept : [accept];
-  return values.some((value) => value.includes('text/html'));
-}
-
-function livePreviewHeaders(headers: http.IncomingHttpHeaders, port: number): http.OutgoingHttpHeaders {
-  const next = { ...headers };
-  const forwardedHost = headers.host;
-  next.host = `127.0.0.1:${port}`;
-  if (forwardedHost) next['x-forwarded-host'] = forwardedHost;
-  next['x-forwarded-proto'] = headers['x-forwarded-proto'] ?? 'https';
-  delete next.connection;
-  delete next['content-length'];
-  delete next['accept-encoding'];
-  return next;
-}
-
-function upgradeRequest(req: http.IncomingMessage, targetPath: string, port: number): string {
-  const headers = livePreviewHeaders(req.headers, port);
-  headers.connection = 'Upgrade';
-  const lines = [`${req.method ?? 'GET'} ${targetPath} HTTP/${req.httpVersion}`];
-  for (const [key, value] of Object.entries(headers)) {
-    if (Array.isArray(value)) {
-      value.forEach((item) => lines.push(`${key}: ${item}`));
-    } else if (value !== undefined) {
-      lines.push(`${key}: ${value}`);
-    }
-  }
-  lines.push('', '');
-  return lines.join('\r\n');
-}

@@ -138,22 +138,12 @@ export interface AppConfig {
   publicBaseUrl: string;
   appDomain?: string;
   decksDomain?: string;
-  livePreview: LivePreviewConfig;
   export: ExportConfig;
   import: ImportConfig;
   agent: AgentConfig;
   database: DatabaseConfig;
   smtp?: SmtpConfig;
   auth: AuthConfig;
-}
-
-export interface LivePreviewConfig {
-  portPoolStart: number;
-  portPoolEnd: number;
-  maxConcurrentDecks: number;
-  deckIdleTimeoutMs: number;
-  crashRetryLimit: number;
-  crashRetryDelayMs: number;
 }
 
 export interface ExportConfig {

@@ -21,7 +21,6 @@ import {
   identifyShareVisitor,
   importPptxDeck,
   inviteUser,
-  listLivePreviews,
   listCollaborators,
   listDecks,
   listAgentModels,
@@ -39,7 +38,6 @@ import {
   sendShareInstruction,
   sendInstructionStream,
   startLivePreview,
-  stopLivePreview,
   submitSharePassword,
   updateAdminSettings,
   updateDeckAgentSettings,
@@ -1107,7 +1105,7 @@ function DeckAdminTools({ deck, onAdminTool, onLoadAgentSettings, onSaveAgentSet
     <section className="card shadow-sm mt-3">
       <div className="card-header">
         <h3 className="h5 mb-1">Admin deck tools</h3>
-        <p className="text-body-secondary small mb-0">Create deck-local Vue files, manage dependencies, and restart the live preview.</p>
+        <p className="text-body-secondary small mb-0">Create deck-local Vue files, manage dependencies, and rebuild the draft preview.</p>
       </div>
       <div className="card-body">
         {status ? <section className="alert alert-info py-2" role="status">{status}</section> : null}
@@ -1186,7 +1184,7 @@ function DeckAdminTools({ deck, onAdminTool, onLoadAgentSettings, onSaveAgentSet
           </div>
           <button className="btn btn-outline-secondary" disabled={busy === 'dependency'} type="submit">Add dependency</button>
         </form>
-        <button className="btn btn-outline-secondary w-100" disabled={busy === 'restartPreview'} type="button" onClick={() => run('restartPreview', {}, 'Live preview stopped. Reopen the workbench to start it again.')}>Restart live preview</button>
+        <button className="btn btn-outline-secondary w-100" disabled={busy === 'restartPreview'} type="button" onClick={() => run('restartPreview', {}, 'Draft rebuild started. Reload the preview frame in a moment.')}>Rebuild draft preview</button>
       </div>
     </section>
   );
@@ -1212,7 +1210,7 @@ function Workbench({ deck, currentUser, onBack, onSend, onCancel }) {
   const customRuntime = isCustomRuntimeDeck(deck);
   const previewUrl = livePreview.data?.url ?? deck.previewUrl;
   const lockedByOther = Boolean(deck.activeEditorUserId && deck.activeEditorUserId !== currentUser?.id);
-  const previewStatus = customRuntime ? 'custom' : livePreview.isError ? 'fallback' : livePreview.isFetching ? 'starting' : livePreview.data?.url ? 'live' : 'draft';
+  const previewStatus = customRuntime ? 'custom' : livePreview.isError ? 'fallback' : livePreview.isFetching ? 'starting' : 'draft';
 
   return (
     <section>
@@ -1228,11 +1226,11 @@ function Workbench({ deck, currentUser, onBack, onSend, onCancel }) {
         <section className="card shadow-sm">
           <div className="card-header d-flex flex-wrap align-items-center justify-content-between gap-3">
             <div>
-              <h3 className="h5 mb-1">Slidev preview</h3>
+              <h3 className="h5 mb-1">Deck preview</h3>
               <span className={`badge ${previewStatusClass(previewStatus)}`}>{formatPreviewStatus(previewStatus)}</span>
             </div>
             <div className="btn-toolbar gap-2">
-              <button className="btn btn-outline-secondary btn-sm" type="button" disabled={livePreview.isFetching} onClick={() => livePreview.refetch()}>Retry live</button>
+              <button className="btn btn-outline-secondary btn-sm" type="button" disabled={livePreview.isFetching} onClick={() => livePreview.refetch()}>Refresh preview</button>
               <button className="btn btn-outline-secondary btn-sm" type="button" onClick={() => setPreviewReload((value) => value + 1)}>Reload frame</button>
             </div>
           </div>
@@ -1416,7 +1414,6 @@ function AdminView({ scaffolds, onInvite, onSettingsSaved }) {
           onSettingsSaved?.();
         }}
       />
-      <AdminLivePreviews />
       <AdminTemplates
         scaffolds={scaffolds}
         settings={settingsQuery.data}
@@ -1571,61 +1568,6 @@ function AdminSettings({ settings, loading, onSave }) {
   );
 }
 
-function AdminLivePreviews() {
-  const queryClient = useQueryClient();
-  const previewsQuery = useQuery({
-    queryKey: queryKeys.livePreviews,
-    queryFn: listLivePreviews,
-    refetchInterval: 10_000,
-  });
-  const stopMutation = useMutation({
-    mutationFn: stopLivePreview,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.livePreviews });
-    },
-  });
-  const previews = previewsQuery.data ?? [];
-
-  return (
-    <div className="card shadow-sm mt-3">
-      <div className="card-header d-flex flex-wrap align-items-center justify-content-between gap-2">
-        <div>
-          <h3 className="h5 mb-1">Live previews</h3>
-          <p className="text-body-secondary small mb-0">Running Slidev dev servers for active workbench previews.</p>
-        </div>
-        <button className="btn btn-outline-secondary btn-sm" type="button" disabled={previewsQuery.isFetching} onClick={() => previewsQuery.refetch()}>Refresh</button>
-      </div>
-      <div className="list-group list-group-flush">
-        {previewsQuery.isLoading ? <div className="list-group-item text-body-secondary">Loading previews...</div> : null}
-        {!previewsQuery.isLoading && !previews.length ? <div className="list-group-item text-body-secondary">No live previews running.</div> : null}
-        {previews.map((preview) => (
-          <div className="list-group-item" key={preview.deckId}>
-            <div className="d-flex flex-wrap align-items-start justify-content-between gap-3">
-              <div>
-                <strong className="d-block">{preview.deckId}</strong>
-                <span className="text-body-secondary small">
-                  {preview.status} · port {preview.port} · pid {preview.pid ?? 'n/a'} · restarts {preview.restartAttempts ?? 0}
-                </span>
-                {preview.error ? <div className="text-danger small mt-1">{preview.error}</div> : null}
-              </div>
-              <div className="btn-toolbar gap-2">
-                <a className="btn btn-outline-secondary btn-sm" href={preview.url} target="_blank" rel="noreferrer">Open</a>
-                <button
-                  className="btn btn-outline-danger btn-sm"
-                  type="button"
-                  disabled={stopMutation.isPending}
-                  onClick={() => stopMutation.mutate(preview.deckId)}
-                >
-                  Stop
-                </button>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
 
 function AdminTemplates({ scaffolds, settings, loading, onSave }) {
   const [defaultKey, setDefaultKey] = useState('');
@@ -1795,15 +1737,13 @@ function exportStatusClass(value) {
 
 function formatPreviewStatus(value) {
   if (value === 'custom') return 'Custom runtime';
-  if (value === 'live') return 'Live HMR';
-  if (value === 'starting') return 'Starting live server';
+  if (value === 'starting') return 'Preparing preview';
   if (value === 'fallback') return 'Draft fallback';
   return 'Draft build';
 }
 
 function previewStatusClass(value) {
   if (value === 'custom') return 'text-bg-success';
-  if (value === 'live') return 'text-bg-success';
   if (value === 'starting') return 'text-bg-warning';
   if (value === 'fallback') return 'text-bg-danger';
   return 'text-bg-secondary';

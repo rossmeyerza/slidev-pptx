@@ -8,10 +8,9 @@ import pinoHttp from 'pino-http';
 import { toNodeHandler } from 'better-auth/node';
 import { loadConfig, fallbackStaticDir } from './core/config.js';
 import { sendError, serveStatic } from './core/http.js';
-import { createApiRouter, handleDeckHostRequest, handleLivePreviewUpgrade } from './api/routes.js';
+import { createApiRouter, handleDeckHostRequest } from './api/routes.js';
 import { ensureDataDirs } from './core/storage.js';
 import { AuthService } from './auth/auth.js';
-import { LivePreviewSupervisor } from './preview/livePreview.js';
 import { createPgPool, runMigrations, setupLangGraphCheckpointer } from './db/db.js';
 import { BETTER_AUTH_BASE_PATH, createBetterAuth } from './auth/betterAuth.js';
 import { SettingsService } from './decks/settings.js';
@@ -43,8 +42,7 @@ async function main(): Promise<void> {
     { stream: process.stdout },
     { stream: createWriteStream(logFile, { flags: 'a' }) },
   ]));
-  const livePreviews = new LivePreviewSupervisor(config, logger.child({ component: 'live-preview' }));
-  const api = createApiRouter(config, livePreviews, pool, logger.child({ component: 'api' }));
+  const api = createApiRouter(config, pool, logger.child({ component: 'api' }));
   const httpLogger = pinoHttp({ logger });
   const app = express();
   const betterAuthHandler = pool ? toNodeHandler(createBetterAuth(config, pool)) : null;
@@ -73,7 +71,7 @@ async function main(): Promise<void> {
   });
   app.use(async (req: Request, res: Response, next: NextFunction) => {
     try {
-      if (await handleDeckHostRequest(config, livePreviews, pool, req, res)) return;
+      if (await handleDeckHostRequest(config, pool, req, res)) return;
       if (await api.handle(req, res)) return;
       next();
     } catch (error) {
@@ -112,15 +110,6 @@ async function main(): Promise<void> {
     }
     process.exit(1);
   });
-  server.on('upgrade', (req, socket, head) => {
-    void handleLivePreviewUpgrade(config, livePreviews, pool, req, socket, head).then((handled) => {
-      if (!handled) socket.destroy();
-    }).catch((error: unknown) => {
-      logger.error({ err: error }, 'upgrade failed');
-      socket.destroy();
-    });
-  });
-
   server.listen(config.port, config.host, () => {
     const address = `http://${config.host}:${config.port}`;
     logger.info({ address, staticDir: config.staticDir, dataDir: config.dataDir }, 'Slidev Agent server listening');
@@ -132,8 +121,7 @@ async function main(): Promise<void> {
     shuttingDown = true;
     logger.info({ signal, restartAfterShutdown }, 'shutting down server');
     server.close(() => {
-      void livePreviews.stopAll()
-        .then(() => pool?.end())
+      void Promise.resolve(pool?.end())
         .finally(() => {
           if (restartAfterShutdown) process.kill(process.pid, signal);
           else process.exit(0);

@@ -28,11 +28,11 @@ Run the product app smoke test:
 scripts/smoke-app.sh
 ```
 
-The script starts an isolated server using temp data under `/tmp`, disables `.env.local` loading so SMTP is not used, starts a fake OpenAI-compatible model endpoint for admin model-list checks, verifies the migration command is a safe no-op without `DATABASE_URL`, logs in through the dev magic-link response, creates a deck from `themes/commercial-profile`, verifies the commercial theme files were copied, creates a public client share link, verifies `/client/:token` serves the React client shell while legacy `/share/:token` routes still work, verifies an unrelated employee is denied until added as a viewer collaborator, and verifies the deck and live-preview APIs are auth-gated.
+The script starts an isolated server using temp data under `/tmp`, disables `.env.local` loading so SMTP is not used, starts a fake OpenAI-compatible model endpoint for admin model-list checks, verifies the migration command is a safe no-op without `DATABASE_URL`, logs in through the dev magic-link response, creates a deck from `themes/commercial-profile`, verifies the commercial theme files were copied, creates a public client share link, verifies `/client/:token` serves the React client shell while legacy `/share/:token` routes still work, verifies an unrelated employee is denied until added as a viewer collaborator, and verifies the deck and preview APIs are auth-gated.
 
 The admin-tools section checks component creation under `theme/components`,
 layout creation under `theme/layouts`, dependency updates in `package.json`
-without running install, invalid package-name rejection, live-preview restart,
+without running install, invalid package-name rejection, draft-rebuild trigger,
 per-deck deepagents model provider overrides, and the employee 403 boundary for
 the same admin-only endpoints. The lock section verifies member instruction
 guards reject filesystem and package-management requests before model execution.
@@ -44,11 +44,6 @@ access, and re-adding as editor for the later lock/edit checks.
 The app smoke also runs with `DECKS_DOMAIN=decks.smoke.test` and checks that
 `<deck-id>.decks.smoke.test` is auth-gated and serves the authenticated deck
 preview through Express host routing.
-
-`npm run smoke:supervisor` uses a fake preview runner to verify the process
-supervisor passes deck-domain HMR settings (`wss`, client port `443`, and
-`/__hmr`) to the Slidev runner, then checks capacity eviction, idle reaping, and
-bounded crash retry after an unexpected preview-process exit.
 
 `npm run smoke:exporter` uses fake built `slidev-to-pptx` and verifier CLIs to
 check that PPTX exports are queued according to `EXPORT_CONCURRENCY`, that two
