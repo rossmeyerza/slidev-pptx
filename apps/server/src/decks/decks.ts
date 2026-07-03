@@ -102,6 +102,7 @@ export class DeckStore {
     const id = randomUUID();
     const scaffoldKey = normalizeScaffoldKey(input.scaffold) ?? this.config.scaffoldKey;
     await this.assertScaffoldExists(scaffoldKey);
+    const isHtmlRuntime = await this.isHtmlScaffold(scaffoldKey);
     const title = normalizeTitle(input.title) ?? inferTitle(input.markdown) ?? 'Untitled deck';
     const markdown = input.markdown ?? setSlidevTitle((await this.scaffoldMarkdown(scaffoldKey)).replaceAll('Slidev Agent Platform', title), title);
     const orgId = await this.configuredOrgId();
@@ -115,11 +116,12 @@ export class DeckStore {
       createdAt: now,
       updatedAt: now,
       visibility: 'private',
-      draftUrl: draftUrlForScaffold(id, scaffoldKey),
+      draftUrl: isHtmlRuntime ? `/runtime/${id}/#/1` : `/draft/${id}/#/1`,
     };
 
     await fs.cp(this.scaffoldDir(scaffoldKey), this.deckDir(id), { recursive: true, force: false });
     await this.linkRuntimeDependencies(id);
+    if (isHtmlRuntime) await this.applyDeckManifestTitle(id, title);
     await writeText(this.deckFile(id), markdown);
     if (this.pool) await this.insertMeta(meta, input.ownerUserId ?? 'system');
     else await writeJson(this.metaFile(id), meta);
@@ -447,6 +449,26 @@ export class DeckStore {
     throw Object.assign(new Error(`Scaffold not found: ${scaffoldKey}`), { statusCode: 404 });
   }
 
+  private async isHtmlScaffold(scaffoldKey: string): Promise<boolean> {
+    try {
+      await fs.access(path.join(this.scaffoldDir(scaffoldKey), 'deck.json'));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private async applyDeckManifestTitle(id: string, title: string): Promise<void> {
+    const manifestPath = path.join(this.deckDir(id), 'deck.json');
+    try {
+      const manifest = JSON.parse(await readRequiredText(manifestPath, 'Deck manifest')) as Record<string, unknown>;
+      manifest.title = title;
+      await writeText(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+    } catch {
+      // A scaffold without a valid manifest still works; the runtime falls back gracefully.
+    }
+  }
+
   private async linkRuntimeDependencies(id: string): Promise<void> {
     const source = path.join(this.config.repoRoot, 'node_modules');
     const target = path.join(this.deckDir(id), 'node_modules');
@@ -468,11 +490,6 @@ export class DeckStore {
 
 function isIgnorableLinkError(error: unknown): boolean {
   return isNodeErrorCode(error, 'ENOENT') || isNodeErrorCode(error, 'EEXIST');
-}
-
-function draftUrlForScaffold(id: string, scaffoldKey: string): string {
-  if (scaffoldKey === 'custom-html') return `/runtime/${id}/#/1`;
-  return `/draft/${id}/#/1`;
 }
 
 function isNodeErrorCode(error: unknown, code: string): boolean {

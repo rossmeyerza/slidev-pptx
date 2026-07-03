@@ -1,0 +1,9 @@
+{
+  "name": "Commercial Profile",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Branded commercial deck: cover with partner logos, stats cards, and closing statement on the HTML runtime.",
+  "scripts": {
+    "preview": "echo \"Open this deck through the platform /runtime/:id route.\""
+  }
+}

@@ -23,7 +23,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     dataDir,
     decksDir: path.join(dataDir, 'decks'),
     staticDir: path.resolve(env.SLIDEV_AGENT_WEB_DIR ?? (awaitableExists(builtWebDir) ? builtWebDir : defaultWebDir)),
-    scaffoldKey: nonEmpty(env.DEFAULT_SCAFFOLD) ?? 'commercial-profile',
+    scaffoldKey: nonEmpty(env.DEFAULT_SCAFFOLD) ?? 'commercial-html',
     host: env.HOST ?? '127.0.0.1',
     port: parsePort(env.PORT),
     publicBaseUrl: env.PUBLIC_BASE_URL ?? `http://${env.HOST ?? '127.0.0.1'}:${parsePort(env.PORT)}`,

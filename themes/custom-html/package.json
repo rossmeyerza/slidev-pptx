@@ -1,8 +1,8 @@
 {
-  "name": "custom-html-runtime",
-  "version": "1.0.0",
+  "name": "HTML Starter",
+  "version": "2.0.0",
   "private": true,
-  "description": "Plain HTML/CSS/JS deck scaffold using the platform custom runtime.",
+  "description": "Clean unbranded HTML deck: per-slide files, deck.json manifest, fixed 1280x720 canvas.",
   "scripts": {
     "preview": "echo \"Open this deck through the platform /runtime/:id route.\""
   }

@@ -59,3 +59,5 @@
 ## Plan
 
 See `docs/product-direction.md` for the current-state architecture and the phased plan (runtime promotion, agent wiring, export retarget).
+
+When editing deck content, follow `docs/deck-authoring.md`: edit `deck.json`, `slides/*.html`, `theme.css`, and `assets/` only — never the runtime shell files (`index.html`, `runtime.js`, `runtime.css`) or platform bookkeeping (`slides.md`, `package.json`, `meta.json`).

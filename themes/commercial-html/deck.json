@@ -1,0 +1,10 @@
+{
+  "title": "Untitled deck",
+  "theme": "theme.css",
+  "slides": [
+    "slides/01-cover.html",
+    "slides/02-context.html",
+    "slides/03-results.html",
+    "slides/04-closing.html"
+  ]
+}

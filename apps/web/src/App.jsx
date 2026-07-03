@@ -1765,7 +1765,7 @@ function previewBuildStatusClass(value) {
 }
 
 function isCustomRuntimeDeck(deck) {
-  return deck?.scaffoldKey === 'custom-html';
+  return Boolean(deck?.previewUrl?.startsWith('/runtime/')) || deck?.scaffoldKey === 'custom-html';
 }
 
 function clientShareTokenFromPath(pathname) {

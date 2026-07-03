@@ -103,11 +103,18 @@ server startup are marked failed because v1 export workers are process-local;
 users can retry from the deck. PPTX import subprocesses are bounded by
 `IMPORT_TIMEOUT_MS`.
 
-The `themes/custom-html` scaffold is a trial non-Slidev runtime. It creates
-ordinary deck workspace files (`index.html`, `style.css`, and `deck.js`) and
-serves them through the authenticated `/runtime/:deckId/#/1` route. That path has
-no build step, no Vite server, and no Slidev process; it is intended to test a
-file-based deck surface before migrating agent editing away from `slides.md`.
+HTML-runtime decks are the product's native format. A deck is a folder of
+plain files — `deck.json` (title + ordered slide list), one
+`<section class="slide">` fragment per file under `slides/`, `theme.css`, and
+`assets/` — rendered by a do-not-edit runtime shell (`index.html`,
+`runtime.js`, `runtime.css`) on a fixed 1280x720 stage scaled to the viewport,
+with keyboard navigation, a slide-index overlay, hash routing, and SSE
+auto-reload. They are served through the authenticated `/runtime/:deckId/#/1`
+route with no build step and no dev server. Two scaffolds ship in `themes/`:
+`custom-html` (clean starter) and `commercial-html` (branded: TCCC Unity
+fonts, partner logo cover, stat cards); `commercial-html` is the default for
+new decks. Any scaffold containing a `deck.json` is treated as an HTML-runtime
+scaffold. See `docs/deck-authoring.md` for the authoring conventions.
 
 Previews are static: the authenticated `/api/decks/:id/live` endpoint schedules
 a background draft build and returns the preview URL for the workbench iframe

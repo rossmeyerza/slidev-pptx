@@ -399,7 +399,8 @@ export function createApiRouter(
   router.add('POST', '/api/decks/:id/admin-tools/restart-preview', async (req, res) => {
     const context = await auth.requireAdmin(req);
     await requireDeckAccess(decks, collaborators, req.params.id, context.user, 'view');
-    scheduleDraftBuild(slidev, req.params.id);
+    const deck = await decks.get(req.params.id);
+    scheduleDraftBuildIfNeeded(slidev, deck);
     sendJson(res, 200, { ok: true });
   });
 
@@ -1071,7 +1072,7 @@ function scheduleDraftBuildIfNeeded(slidev: SlidevBuildService, deck: DeckRecord
 }
 
 function isCustomRuntimeDeck(deck: DeckRecord): boolean {
-  return deck.meta.scaffoldKey === 'custom-html';
+  return Boolean(deck.meta.draftUrl?.startsWith('/runtime/')) || deck.meta.scaffoldKey === 'custom-html';
 }
 
 function customRuntimePreview(deckId: string) {
