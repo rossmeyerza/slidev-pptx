@@ -1365,6 +1365,9 @@ async function recordInstruction(
   const deck = await decks.get(id);
   const target = await targetedInstruction(decks, deck, body.targetSlide, instruction.trim());
   await decks.snapshotDeck(id);
+  const history = config.agent.historyTurns > 0
+    ? (await chat.list(id)).slice(-config.agent.historyTurns).map(({ role, content }) => ({ role, content }))
+    : [];
   const now = new Date().toISOString();
   const runConfig = agentRunConfig(config, user, deck);
   const controller = new AbortController();
@@ -1380,6 +1383,7 @@ async function recordInstruction(
     const result = await runDeckEditAgent(config, user, deck, target.agentInstruction, {
       signal: controller.signal,
       deckRoot: decks.deckPath(id),
+      history,
       onEvent: (event, data) => emit?.(event, { ...(typeof data === 'object' && data !== null ? data as Record<string, unknown> : { value: data }), runId: run.id }),
     });
     emit?.('status', { status: 'writing_file', runId: run.id });

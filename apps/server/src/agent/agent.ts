@@ -26,11 +26,11 @@ export async function runDeckEditAgent(
   user: UserRecord,
   deck: DeckRecord,
   instruction: string,
-  options: { signal?: AbortSignal; deckRoot?: string; onEvent?: AgentEventHandler } = {},
+  options: { signal?: AbortSignal; deckRoot?: string; onEvent?: AgentEventHandler; history?: Array<{ role: 'user' | 'agent'; content: string }> } = {},
 ): Promise<AgentEditResult> {
   assertAgentInstructionAllowed(user, instruction);
   if (!options.deckRoot) throw Object.assign(new Error('Deepagents runtime requires deckRoot'), { statusCode: 500 });
-  const result = await runDeepAgentDeckEdit(config, user, deck, options.deckRoot, instruction, { signal: options.signal, onEvent: options.onEvent });
+  const result = await runDeepAgentDeckEdit(config, user, deck, options.deckRoot, instruction, { signal: options.signal, onEvent: options.onEvent, history: options.history });
   if (result.mode === 'markdown') validateMarkdown(requiredMarkdown(result));
   return result;
 }

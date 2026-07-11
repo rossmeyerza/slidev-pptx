@@ -42,6 +42,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       memberModel: nonEmpty(env.MEMBER_AGENT_MODEL) ?? nonEmpty(env.AGENT_MODEL) ?? 'claude-sonnet-5',
       adminModel: nonEmpty(env.ADMIN_AGENT_MODEL) ?? nonEmpty(env.AGENT_MODEL) ?? 'claude-sonnet-5',
       timeoutMs: parsePositiveInt(env.AGENT_TIMEOUT_MS, 120_000),
+      historyTurns: parseNonNegativeInt(env.AGENT_HISTORY_TURNS, 8),
     },
     database: {
       url: nonEmpty(env.DATABASE_URL),
@@ -100,6 +101,15 @@ function smtpConfig(env: NodeJS.ProcessEnv) {
     pass: env.SMTP_PASS,
     from: env.SMTP_FROM ?? 'Deckhand <no-reply@localhost>',
   };
+}
+
+function parseNonNegativeInt(value: string | undefined, fallback: number): number {
+  if (!value) return fallback;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    throw new Error(`Invalid non-negative integer value: ${value}`);
+  }
+  return parsed;
 }
 
 function parsePositiveInt(value: string | undefined, fallback: number): number {

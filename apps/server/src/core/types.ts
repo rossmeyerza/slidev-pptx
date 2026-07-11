@@ -168,6 +168,8 @@ export interface AgentConfig {
   memberModel: string;
   adminModel: string;
   timeoutMs: number;
+  /** Prior chat messages replayed into the agent context per run (0 = off). */
+  historyTurns: number;
 }
 
 export interface DatabaseConfig {

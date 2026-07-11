@@ -37,7 +37,7 @@ export async function runDeepAgentDeckEdit(
   deck: DeckRecord,
   deckRoot: string,
   instruction: string,
-  options: { signal?: AbortSignal; onEvent?: DeepAgentEventHandler } = {},
+  options: { signal?: AbortSignal; onEvent?: DeepAgentEventHandler; history?: Array<{ role: 'user' | 'agent'; content: string }> } = {},
 ): Promise<DeepAgentEditResult> {
   const runConfig = agentRunConfig(config, user, deck);
   const model = new ChatOpenAI({
@@ -67,7 +67,7 @@ export async function runDeepAgentDeckEdit(
 
   try {
     const before = isWorkspaceDeck(deck) ? await snapshotWorkspace(deckRoot) : new Map<string, string>();
-    const state = await deepAgentState(instruction, deck, deckRoot);
+    const state = await deepAgentState(instruction, deck, deckRoot, options.history ?? []);
     const runOptions = {
       configurable: { thread_id: deck.meta.id },
       signal: options.signal,
@@ -105,7 +105,34 @@ export async function runDeepAgentDeckEdit(
   }
 }
 
-async function deepAgentState(instruction: string, deck: DeckRecord, deckRoot: string) {
+/**
+ * Pruned conversation replay (docs/agent-memory.md): prior turns come back as
+ * plain user/assistant messages carrying only instruction/summary text — old
+ * tool transcripts and stale file dumps stay out. The current deck files
+ * arrive fresh in the brief, once.
+ */
+function historyMessages(history: Array<{ role: 'user' | 'agent'; content: string }>) {
+  return history.map((message) => ({
+    role: message.role === 'user' ? ('user' as const) : ('assistant' as const),
+    content: trimHistoryContent(message.content),
+  }));
+}
+
+function trimHistoryContent(content: string): string {
+  const withoutMeta = content
+    .split('\n')
+    .filter((line) => !/^(Model|Run): /.test(line.trim()))
+    .join('\n')
+    .trim();
+  return withoutMeta.length > 600 ? `${withoutMeta.slice(0, 600)}…` : withoutMeta;
+}
+
+async function deepAgentState(
+  instruction: string,
+  deck: DeckRecord,
+  deckRoot: string,
+  history: Array<{ role: 'user' | 'agent'; content: string }> = [],
+) {
   if (isWorkspaceDeck(deck)) {
     const files = await readWorkspacePromptFiles(deckRoot);
     const slideSections = files.slides.flatMap((slide) => [
@@ -117,6 +144,7 @@ async function deepAgentState(instruction: string, deck: DeckRecord, deckRoot: s
     ]);
     return {
       messages: [
+        ...historyMessages(history),
         {
           role: 'user',
           content: [
@@ -146,6 +174,7 @@ async function deepAgentState(instruction: string, deck: DeckRecord, deckRoot: s
 
   return {
     messages: [
+      ...historyMessages(history),
       {
         role: 'user',
         content: [
