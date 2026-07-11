@@ -149,18 +149,28 @@ the position-based check matched it.
   "pass" rode on file-state leakage. Replay overhead itself is small
   (~4k prompt tokens per request); the +memory arm's higher bill came mostly
   from the T3 flake retries, not the replay.
-- **Cache reads were zero everywhere — including GPT.** The ledger's
-  `cache_read_tokens` never moved, and the proxy's usage-log notes say WPP
-  does not expose cache token counts. So either WPP isn't caching these calls
-  or the discount is invisible to us; ledger costs assume full input rates.
-  If WPP does discount cached GPT/Vertex traffic at billing, gpt-5.6 arms are
-  cheaper than shown. **Action: verify against real WPP billing before
-  treating the cache advantage as established.**
+- **Cache reads were zero everywhere — and that was the truth** (verified
+  with the proxy maintainers, 2026-07-11): (a) WPP **never discounts the
+  user-facing bill for caching** — its cost calculator prices full
+  promptTokens at full input rates; the vendor-side cache discount accrues to
+  WPP's own cloud invoice. Through WPP, caching buys latency, not chargeback
+  savings. (b) The gpt-5.6 family currently gets **no cache credit at all**
+  (new-model serving; gpt-5.4-mini shows ~95% cached on identical probes —
+  presumably temporary). (c) Claude models are **structurally uncacheable
+  via WPP**: Bedrock caching needs `cache_control` breakpoints WPP never
+  sends. The proxy also had a capture bug (WPP's `cached_tokens` field was
+  dropped before the DB write) — fixed in proxy v1.5.2, which adds a
+  `cost_cache_adjusted_usd` column: `total_cost_usd` stays the chargeback
+  truth, the new column shows vendor economics. When 5.6 caching switches on,
+  agent loops' warm prefixes should show 80–90% cached there.
 - **Model verdicts (one-run caution applies):** sonnet-5 is the
   quality/latency choice; terra did the same workload at ~40–70% of sonnet's
   ledger cost with one instruction-following miss and ~1.6x wall time; luna
   flailed (reasoning-heavy, slow, failed the core edit) — not fit for deck
   editing.
 - **Decision for now:** memory stays on (default `AGENT_HISTORY_TURNS=8`);
-  default model stays claude-sonnet-5; gpt-5.6-terra is the cost candidate to
-  re-test with more runs and a billing-side cache check.
+  default model stays claude-sonnet-5. gpt-5.6-terra's ~2.4x chargeback
+  advantage is real as measured (caching adds nothing to anyone's bill via
+  WPP), so it remains the cost candidate pending a multi-run quality re-test;
+  re-probe terra's `cost_cache_adjusted_usd` periodically to see when 5.6
+  cache-serving switches on (vendor-economics only).
