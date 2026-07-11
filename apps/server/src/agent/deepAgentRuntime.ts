@@ -77,14 +77,23 @@ export async function runDeepAgentDeckEdit(
     let parsed = await parseDeepAgentResult(result, deck, deckRoot, before);
     if (isWorkspaceDeck(deck) && parsed.mode === 'workspace' && !parsed.changedFiles?.length) {
       // The model sometimes answers from the prompt-embedded file contents and
-      // claims success without a single tool call. Confront it once on the
-      // same thread before giving up; the route-level guard fails the run if
-      // this retry also produces no file changes.
+      // claims success without a single tool call. Confront it once before
+      // giving up; the route-level guard fails the run if this retry also
+      // produces no file changes. The retry MUST restate the original
+      // instruction: without a Postgres checkpointer each invoke is stateless,
+      // so a bare corrective message would reach the model with no memory of
+      // what was asked.
       options.onEvent?.('status', { status: 'retrying_no_changes' });
       const retryState = {
         messages: [{
           role: 'user',
-          content: 'No deck files were actually modified — your response claimed a change that never happened. Apply the requested change NOW using write_file or edit_file tool calls, verify by re-reading the file, then return the structured output again.',
+          content: [
+            'No deck files were actually modified — your previous response claimed a change that never happened.',
+            'Apply this request NOW using write_file or edit_file tool calls, verify by re-reading the file, then return the structured output again.',
+            '',
+            'The request:',
+            instruction,
+          ].join('\n'),
         }],
       };
       const retryResult = await runDeepAgentWithEvents(agent, retryState, runOptions, options.onEvent);
