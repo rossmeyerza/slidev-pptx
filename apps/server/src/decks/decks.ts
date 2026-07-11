@@ -484,6 +484,17 @@ export class DeckStore {
     } catch {
       // A scaffold without a valid manifest still works; the runtime falls back gracefully.
     }
+    // Scaffold slides carry the "Untitled deck" placeholder; stamp the real
+    // title into slide copy so the cover matches the deck from the start.
+    const slidesDir = path.join(this.deckDir(id), 'slides');
+    const entries = await fs.readdir(slidesDir, { withFileTypes: true }).catch(() => []);
+    for (const entry of entries) {
+      if (!entry.isFile() || !entry.name.endsWith('.html')) continue;
+      const slidePath = path.join(slidesDir, entry.name);
+      const content = await fs.readFile(slidePath, 'utf8').catch(() => '');
+      if (!content.includes('Untitled deck')) continue;
+      await writeText(slidePath, content.replaceAll('Untitled deck', escapeHtmlText(title)));
+    }
   }
 
   private async linkRuntimeDependencies(id: string): Promise<void> {
@@ -507,6 +518,14 @@ export class DeckStore {
 
 function isIgnorableLinkError(error: unknown): boolean {
   return isNodeErrorCode(error, 'ENOENT') || isNodeErrorCode(error, 'EEXIST');
+}
+
+function escapeHtmlText(value: string): string {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;');
 }
 
 function isNodeErrorCode(error: unknown, code: string): boolean {

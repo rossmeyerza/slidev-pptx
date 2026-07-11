@@ -378,6 +378,96 @@ h1, h2, h3, h4, h5, h6,
 
 /* ---------- dashboard ---------- */
 
+/* Hero band: the product intro shares the runtime's ink chrome so the
+   dashboard opens on the same identity as the deck stage. */
+.dashboard-hero {
+  border: 0;
+  color: var(--ink-text);
+  background:
+    radial-gradient(42rem 22rem at 92% -40%, rgba(58, 185, 213, 0.2), transparent 62%),
+    var(--ink);
+}
+
+.dashboard-hero .card-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+  gap: 2.25rem;
+  align-items: center;
+  padding: 1.85rem 2rem;
+}
+
+.dashboard-hero .page-eyebrow {
+  color: var(--accent-bright);
+}
+
+.hero-title {
+  font-family: var(--app-font-display);
+  font-size: 1.65rem;
+  letter-spacing: -0.01em;
+  color: #fff;
+  margin-bottom: 0.5rem;
+}
+
+.hero-lead {
+  max-width: 34rem;
+  color: var(--ink-text);
+}
+
+.hero-steps {
+  list-style: none;
+  display: grid;
+  gap: 0.95rem;
+  margin: 0;
+  padding: 0;
+}
+
+.hero-steps li {
+  display: flex;
+  gap: 0.8rem;
+  align-items: flex-start;
+}
+
+.hero-steps strong {
+  display: block;
+  font-family: var(--app-font-display);
+  color: #fff;
+  margin-bottom: 0.1rem;
+}
+
+.hero-steps li > div > span {
+  font-size: 0.875rem;
+  color: var(--ink-text-muted);
+}
+
+.hero-step-icon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 2.35rem;
+  height: 2.35rem;
+  border-radius: 0.65rem;
+  background: rgba(58, 185, 213, 0.14);
+  color: var(--accent-bright);
+}
+
+.template-icon {
+  background: var(--bs-primary-bg-subtle);
+  color: var(--accent);
+}
+
+[data-bs-theme='dark'] .template-icon {
+  background: rgba(58, 185, 213, 0.12);
+  color: var(--accent-bright);
+}
+
+.app-icon {
+  flex-shrink: 0;
+}
+
+.suggestion-chip {
+  border-radius: 999px;
+}
+
 .dashboard-summary {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -621,6 +711,49 @@ h1, h2, h3, h4, h5, h6,
   max-width: 26rem;
 }
 
+.auth-card-split {
+  max-width: 50rem;
+}
+
+/* Left panel of the split auth card: brand + product pitch on ink. */
+.auth-intro {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 2rem 1.75rem;
+  background: var(--ink-2);
+  color: var(--ink-text);
+  border-right: 1px solid var(--ink-border);
+}
+
+.auth-intro h1 {
+  color: #fff;
+}
+
+.auth-intro-lead {
+  color: var(--ink-text-muted);
+}
+
+.auth-intro-points {
+  list-style: none;
+  margin: 1.5rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 1rem;
+}
+
+.auth-intro-points li {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  font-size: 0.9rem;
+}
+
+.auth-intro-points .hero-step-icon {
+  width: 2.1rem;
+  height: 2.1rem;
+}
+
 .auth-card .card-header {
   background: var(--ink-2);
   color: var(--ink-text);
@@ -653,6 +786,11 @@ h1, h2, h3, h4, h5, h6,
 @media (max-width: 1080px) {
   .deck-list {
     max-height: 16rem;
+  }
+
+  .dashboard-hero .card-body {
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
   }
 
   .workbench-grid,

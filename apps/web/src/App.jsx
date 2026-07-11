@@ -1,6 +1,41 @@
 // @ts-check
 import React, { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+
+/* Icon bodies extracted from @iconify-json/mdi (Apache-2.0), 24x24 viewBox.
+   Inline so the app stays self-contained — no icon font, no CDN. */
+const ICONS = {
+  chat: "<path fill='currentColor' d='M12 3C6.5 3 2 6.58 2 11a7.22 7.22 0 0 0 2.75 5.5c0 .6-.42 2.17-2.75 4.5c2.37-.11 4.64-1 6.47-2.5c1.14.33 2.34.5 3.53.5c5.5 0 10-3.58 10-8s-4.5-8-10-8m0 14c-4.42 0-8-2.69-8-6s3.58-6 8-6s8 2.69 8 6s-3.58 6-8 6m5-5v-2h-2v2zm-4 0v-2h-2v2zm-4 0v-2H7v2z'/>",
+  magic: "<path fill='currentColor' d='M7.5 5.6L5 7l1.4-2.5L5 2l2.5 1.4L10 2L8.6 4.5L10 7zm12 9.8L22 14l-1.4 2.5L22 19l-2.5-1.4L17 19l1.4-2.5L17 14zM22 2l-1.4 2.5L22 7l-2.5-1.4L17 7l1.4-2.5L17 2l2.5 1.4zm-8.66 10.78l2.44-2.44l-2.12-2.12l-2.44 2.44zm1.03-5.49l2.34 2.34c.39.37.39 1.02 0 1.41L5.04 22.71c-.39.39-1.04.39-1.41 0l-2.34-2.34c-.39-.37-.39-1.02 0-1.41L12.96 7.29c.39-.39 1.04-.39 1.41 0'/>",
+  share: "<path fill='currentColor' d='M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81c1.66 0 3-1.34 3-3s-1.34-3-3-3s-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66c0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91s-1.31-2.92-2.92-2.92M18 4c.55 0 1 .45 1 1s-.45 1-1 1s-1-.45-1-1s.45-1 1-1M6 13c-.55 0-1-.45-1-1s.45-1 1-1s1 .45 1 1s-.45 1-1 1m12 7c-.55 0-1-.45-1-1s.45-1 1-1s1 .45 1 1s-.45 1-1 1'/>",
+  pptx: "<path fill='currentColor' d='M9.8 13.4h2.5c1.5 0 2.16-.28 2.8-.82c.64-.55.9-1.33.9-2.35c0-.97-.25-1.73-.9-2.35c-.65-.59-1.27-.88-2.8-.88H8v10h1.8zM19 3a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2zm-9.2 9V8.4h2.3c.66 0 1.17.25 1.5.6s.5.72.5 1.24c0 .56-.18.95-.5 1.26s-.7.5-1.38.5z'/>",
+  presentation: "<path fill='currentColor' d='M2 3h8a2 2 0 0 1 2-2a2 2 0 0 1 2 2h8v2h-1v11h-5.75L17 22h-2l-1.75-6h-2.5L9 22H7l1.75-6H3V5H2zm3 2v9h14V5z'/>",
+  people: "<path fill='currentColor' d='M12 5a3.5 3.5 0 0 0-3.5 3.5A3.5 3.5 0 0 0 12 12a3.5 3.5 0 0 0 3.5-3.5A3.5 3.5 0 0 0 12 5m0 2a1.5 1.5 0 0 1 1.5 1.5A1.5 1.5 0 0 1 12 10a1.5 1.5 0 0 1-1.5-1.5A1.5 1.5 0 0 1 12 7M5.5 8A2.5 2.5 0 0 0 3 10.5c0 .94.53 1.75 1.29 2.18c.36.2.77.32 1.21.32s.85-.12 1.21-.32c.37-.21.68-.51.91-.87A5.42 5.42 0 0 1 6.5 8.5v-.28c-.3-.14-.64-.22-1-.22m13 0c-.36 0-.7.08-1 .22v.28c0 1.2-.39 2.36-1.12 3.31c.12.19.25.34.4.49a2.48 2.48 0 0 0 1.72.7c.44 0 .85-.12 1.21-.32c.76-.43 1.29-1.24 1.29-2.18A2.5 2.5 0 0 0 18.5 8M12 14c-2.34 0-7 1.17-7 3.5V19h14v-1.5c0-2.33-4.66-3.5-7-3.5m-7.29.55C2.78 14.78 0 15.76 0 17.5V19h3v-1.93c0-1.01.69-1.85 1.71-2.52m14.58 0c1.02.67 1.71 1.51 1.71 2.52V19h3v-1.5c0-1.74-2.78-2.72-4.71-2.95M12 16c1.53 0 3.24.5 4.23 1H7.77c.99-.5 2.7-1 4.23-1'/>",
+  link: "<path fill='currentColor' d='M10.59 13.41c.41.39.41 1.03 0 1.42c-.39.39-1.03.39-1.42 0a5.003 5.003 0 0 1 0-7.07l3.54-3.54a5.003 5.003 0 0 1 7.07 0a5.003 5.003 0 0 1 0 7.07l-1.49 1.49c.01-.82-.12-1.64-.4-2.42l.47-.48a2.98 2.98 0 0 0 0-4.24a2.98 2.98 0 0 0-4.24 0l-3.53 3.53a2.98 2.98 0 0 0 0 4.24m2.82-4.24c.39-.39 1.03-.39 1.42 0a5.003 5.003 0 0 1 0 7.07l-3.54 3.54a5.003 5.003 0 0 1-7.07 0a5.003 5.003 0 0 1 0-7.07l1.49-1.49c-.01.82.12 1.64.4 2.43l-.47.47a2.98 2.98 0 0 0 0 4.24a2.98 2.98 0 0 0 4.24 0l3.53-3.53a2.98 2.98 0 0 0 0-4.24a.973.973 0 0 1 0-1.42'/>",
+  upload: "<path fill='currentColor' d='M2 12h2v5h16v-5h2v5c0 1.11-.89 2-2 2H4a2 2 0 0 1-2-2zM12 2L6.46 7.46l1.42 1.42L11 5.75V15h2V5.75l3.13 3.13l1.42-1.43z'/>",
+  bolt: "<path fill='currentColor' d='M11 9.47V11h3.76L13 14.53V13H9.24zM13 1L6 15h5v8l7-14h-5z'/>",
+  edit: "<path fill='currentColor' d='M10 21H5c-1.11 0-2-.89-2-2V5c0-1.11.89-2 2-2h14c1.11 0 2 .89 2 2v5.33c-.3-.12-.63-.19-.96-.19c-.37 0-.72.08-1.04.23V5H5v14h5.11l-.11.11zM7 9h10V7H7zm0 8h5.11L14 15.12V15H7zm0-4h9.12l.88-.88V11H7zm14.7.58l-1.28-1.28a.55.55 0 0 0-.77 0l-1 1l2.05 2.05l1-1a.55.55 0 0 0 0-.77M12 22h2.06l6.05-6.07l-2.05-2.05L12 19.94z'/>",
+  eye: "<path fill='currentColor' d='M12 9a3 3 0 0 1 3 3a3 3 0 0 1-3 3a3 3 0 0 1-3-3a3 3 0 0 1 3-3m0-4.5c5 0 9.27 3.11 11 7.5c-1.73 4.39-6 7.5-11 7.5S2.73 16.39 1 12c1.73-4.39 6-7.5 11-7.5M3.18 12a9.821 9.821 0 0 0 17.64 0a9.821 9.821 0 0 0-17.64 0'/>",
+  sparkles: "<path fill='currentColor' d='m19 1l-1.26 2.75L15 5l2.74 1.26L19 9l1.25-2.74L23 5l-2.75-1.25M9 4L6.5 9.5L1 12l5.5 2.5L9 20l2.5-5.5L17 12l-5.5-2.5M19 15l-1.26 2.74L15 19l2.74 1.25L19 23l1.25-2.75L23 19l-2.75-1.26'/>",
+  palette: "<path fill='currentColor' d='m2.5 19.6l1.3.6v-9L1.4 17c-.4 1.1.1 2.2 1.1 2.6M15.2 4.8l5 12l-7.3 3l-5-11.9v-.1zm.1-2c-.3 0-.5 0-.8.1L7.1 6c-.7.3-1.2 1-1.2 1.8c0 .2 0 .5.1.8l5 11.9c.3.8 1 1.2 1.8 1.2c.3 0 .5 0 .8-.1l7.4-3.1c1-.4 1.5-1.6 1.1-2.6L17.1 4c-.3-.8-1.1-1.2-1.8-1.2m-4.8 7.1c-.6 0-1-.4-1-1s.4-1 1-1s1 .5 1 1s-.4 1-1 1m-4.6 9.9c0 1.1.9 2 2 2h1.4l-3.4-8.3z'/>",
+  timer: "<path fill='currentColor' d='M6 2h12v6l-4 4l4 4v6H6v-6l4-4l-4-4zm10 14.5l-4-4l-4 4V20h8zm-4-5l4-4V4H8v3.5zM10 6h4v.75l-2 2l-2-2z'/>",
+};
+
+function Icon({ name, size = 18, className = '' }) {
+  const body = ICONS[name];
+  if (!body) return null;
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      className={`app-icon${className ? ` ${className}` : ''}`}
+      aria-hidden="true"
+      dangerouslySetInnerHTML={{ __html: body }}
+    />
+  );
+}
 import {
   addAdminDependency,
   bootstrapAdmin,
@@ -339,12 +374,28 @@ function AuthScreen({ loading = false, hasUsers = true, notice = '', onLogin, on
 
   return (
     <section className="auth-shell" data-bs-theme="light">
-      <div className="card auth-card overflow-hidden shadow">
-        <div className="card-header">
+      <div className="card auth-card auth-card-split overflow-hidden shadow">
+        <div className="row g-0">
+        <div className="col-12 col-md-6 auth-intro">
           <span className="brand-mark mb-3" style={{ width: '2rem', height: '2rem', fontSize: '1rem' }} aria-hidden="true">S</span>
           <h1 className="h4 mb-1">Slidev Agent</h1>
-          <p className="mb-0 small" style={{ color: 'var(--ink-text-muted)' }}>Chat with the agent, shape client decks, share them with a link.</p>
+          <p className="mb-0 small auth-intro-lead">Describe the deck. The agent builds it.</p>
+          <ul className="auth-intro-points">
+            <li>
+              <span className="hero-step-icon"><Icon name="chat" size={18} /></span>
+              <span>Brief an agent in plain language and it writes branded slides for you.</span>
+            </li>
+            <li>
+              <span className="hero-step-icon"><Icon name="eye" size={18} /></span>
+              <span>Watch the deck take shape in a live preview while the agent works.</span>
+            </li>
+            <li>
+              <span className="hero-step-icon"><Icon name="share" size={18} /></span>
+              <span>Share a secure client link or export a pixel-perfect PPTX.</span>
+            </li>
+          </ul>
         </div>
+        <div className="col-12 col-md-6">
         <div className="card-body p-4">
         {notice ? <section className="alert alert-warning" role="alert">{notice}</section> : null}
         {loading ? <p className="text-body-secondary">Checking session...</p> : null}
@@ -397,6 +448,8 @@ function AuthScreen({ loading = false, hasUsers = true, notice = '', onLogin, on
             <button className="btn btn-outline-primary" disabled={busy} type="submit">Create first admin</button>
           </form>
         ) : null}
+        </div>
+        </div>
         </div>
       </div>
     </section>
@@ -705,6 +758,7 @@ function DeckDashboard({ user, decks, scaffolds, loading, onSelectDeck, onCreate
   const [importFile, setImportFile] = useState(null);
   const [busy, setBusy] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [showImport, setShowImport] = useState(false);
   const defaultScaffold = scaffolds.find((item) => item.isDefault)?.key ?? scaffolds[0]?.key ?? '';
   const selectedScaffold = scaffold || defaultScaffold;
   const sortedDecks = [...decks].sort((left, right) => String(right.updatedAt ?? '').localeCompare(String(left.updatedAt ?? '')));
@@ -719,12 +773,46 @@ function DeckDashboard({ user, decks, scaffolds, loading, onSelectDeck, onCreate
         </div>
       </div>
 
-      <DashboardSummary user={user} decks={decks} scaffolds={scaffolds} />
+      <section className="dashboard-hero card shadow-sm mb-4" aria-label="How this works">
+        <div className="card-body">
+          <div className="hero-copy">
+            <p className="page-eyebrow mb-2">Deck agent</p>
+            <h2 className="hero-title">Describe the deck. The agent builds it.</h2>
+            <p className="hero-lead mb-0">Chat with an agent that writes branded slides in front of you — then hand your client a live link or a pixel-perfect PowerPoint.</p>
+          </div>
+          <ol className="hero-steps">
+            <li>
+              <span className="hero-step-icon"><Icon name="chat" size={20} /></span>
+              <div>
+                <strong>Brief it</strong>
+                <span>Pick a branded template and describe the deck in plain language.</span>
+              </div>
+            </li>
+            <li>
+              <span className="hero-step-icon"><Icon name="magic" size={20} /></span>
+              <div>
+                <strong>Watch it build</strong>
+                <span>The agent edits the slides while the preview updates live.</span>
+              </div>
+            </li>
+            <li>
+              <span className="hero-step-icon"><Icon name="share" size={20} /></span>
+              <div>
+                <strong>Share or export</strong>
+                <span>Send a secure client link, or export the deck as PPTX.</span>
+              </div>
+            </li>
+          </ol>
+        </div>
+      </section>
 
-      <div className="card shadow-sm mb-3">
-        <div className="card-header">
-          <h3 className="h5 mb-1">Start a deck</h3>
-          <p className="text-body-secondary small mb-0">The agent drafts the first version from your template and brief.</p>
+      <div className="card shadow-sm mb-4">
+        <div className="card-header d-flex align-items-center gap-2">
+          <Icon name="sparkles" size={18} className="text-primary" />
+          <div>
+            <h3 className="h5 mb-1">Start a deck</h3>
+            <p className="text-body-secondary small mb-0">The agent drafts the first version from your template and brief — usually in under a minute.</p>
+          </div>
         </div>
         <div className="card-body">
           <form
@@ -765,45 +853,49 @@ function DeckDashboard({ user, decks, scaffolds, loading, onSelectDeck, onCreate
               <button className="btn btn-primary w-100" disabled={busy || !selectedScaffold} type="submit">Create</button>
             </div>
           </form>
+          <div className="border-top pt-3 mt-4">
+            <button type="button" className="btn btn-link btn-sm p-0 text-decoration-none d-inline-flex align-items-center gap-2" aria-expanded={showImport} onClick={() => setShowImport((value) => !value)}>
+              <Icon name="upload" size={16} />
+              {showImport ? 'Hide PowerPoint import' : 'Have an existing PowerPoint? Import it'}
+            </button>
+            {showImport ? (
+              <form
+                className="row g-3 align-items-end mt-1"
+                onSubmit={async (event) => {
+                  event.preventDefault();
+                  if (!importFile) return;
+                  setImporting(true);
+                  try {
+                    await onImport({ file: importFile, title: importTitle });
+                    setImportTitle('');
+                    setImportFile(null);
+                    event.currentTarget.reset();
+                  } finally {
+                    setImporting(false);
+                  }
+                }}
+              >
+                <div className="col-12">
+                  <p className="text-body-secondary small mb-0">Imports create a rough draft from the PowerPoint content; expect to refine layout and copy with the agent afterwards.</p>
+                </div>
+                <div className="col-12 col-lg-4">
+                  <label className="form-label" htmlFor="importTitle">Deck title</label>
+                  <input className="form-control" id="importTitle" value={importTitle} onChange={(event) => setImportTitle(event.target.value)} placeholder="Use file name" />
+                </div>
+                <div className="col-12 col-lg-5">
+                  <label className="form-label" htmlFor="importPptx">PowerPoint file</label>
+                  <input className="form-control" id="importPptx" type="file" accept=".pptx,application/vnd.openxmlformats-officedocument.presentationml.presentation" onChange={(event) => setImportFile(event.target.files?.[0] ?? null)} required />
+                </div>
+                <div className="col-12 col-lg-3">
+                  <button className="btn btn-outline-primary w-100" disabled={importing || !importFile} type="submit">{importing ? 'Importing...' : 'Import PPTX'}</button>
+                </div>
+              </form>
+            ) : null}
+          </div>
         </div>
       </div>
 
-      <div className="card shadow-sm mb-3">
-        <div className="card-header">
-          <h3 className="h5 mb-1">Import PPTX</h3>
-          <p className="text-body-secondary small mb-0">Create a rough Slidev deck from an existing PowerPoint file.</p>
-        </div>
-        <div className="card-body">
-          <form
-            className="row g-3 align-items-end"
-            onSubmit={async (event) => {
-              event.preventDefault();
-              if (!importFile) return;
-              setImporting(true);
-              try {
-                await onImport({ file: importFile, title: importTitle });
-                setImportTitle('');
-                setImportFile(null);
-                event.currentTarget.reset();
-              } finally {
-                setImporting(false);
-              }
-            }}
-          >
-            <div className="col-12 col-lg-4">
-              <label className="form-label" htmlFor="importTitle">Deck title</label>
-              <input className="form-control" id="importTitle" value={importTitle} onChange={(event) => setImportTitle(event.target.value)} placeholder="Use file name" />
-            </div>
-            <div className="col-12 col-lg-5">
-              <label className="form-label" htmlFor="importPptx">PowerPoint file</label>
-              <input className="form-control" id="importPptx" type="file" accept=".pptx,application/vnd.openxmlformats-officedocument.presentationml.presentation" onChange={(event) => setImportFile(event.target.files?.[0] ?? null)} required />
-            </div>
-            <div className="col-12 col-lg-3">
-              <button className="btn btn-outline-primary w-100" disabled={importing || !importFile} type="submit">{importing ? 'Importing...' : 'Import PPTX'}</button>
-            </div>
-          </form>
-        </div>
-      </div>
+      <DashboardSummary user={user} decks={decks} scaffolds={scaffolds} />
 
       <div className="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-3">
         <div>
@@ -813,7 +905,15 @@ function DeckDashboard({ user, decks, scaffolds, loading, onSelectDeck, onCreate
       </div>
       <div className="deck-grid">
         {loading ? <div className="card shadow-sm"><div className="card-body text-body-secondary">Loading decks...</div></div> : null}
-        {!loading && !decks.length ? <div className="card shadow-sm"><div className="card-body text-body-secondary">No decks yet. Create one from the scaffold.</div></div> : null}
+        {!loading && !decks.length ? (
+          <div className="card shadow-sm empty-state">
+            <div className="card-body text-center py-5">
+              <Icon name="presentation" size={40} className="text-body-secondary mb-3" />
+              <h4 className="h5 mb-2">No decks yet</h4>
+              <p className="text-body-secondary small mb-0 mx-auto" style={{ maxWidth: '24rem' }}>Start your first deck above — give it a title, pick a template, and the agent drafts the opening slides for you.</p>
+            </div>
+          </div>
+        ) : null}
         {recentDecks.map((deck) => (
           <article className="card shadow-sm deck-card" key={deck.id}>
             <div className="card-body d-flex flex-column">
@@ -845,22 +945,22 @@ function DashboardSummary({ user, decks, scaffolds }) {
   return (
     <section className="dashboard-summary mb-4" aria-label="Workspace summary">
       <article>
-        <span className="page-eyebrow">{admin ? 'Workspace decks' : 'Visible decks'}</span>
+        <span className="page-eyebrow d-inline-flex align-items-center gap-1"><Icon name="presentation" size={14} />{admin ? 'Workspace decks' : 'Visible decks'}</span>
         <div className="summary-value">{stats.totalDecks}</div>
         <p className="text-body-secondary small mb-0">{stats.publishedDecks} published · {stats.draftDecks} draft</p>
       </article>
       <article>
-        <span className="page-eyebrow">{admin ? 'Client exposure' : 'Client links'}</span>
+        <span className="page-eyebrow d-inline-flex align-items-center gap-1"><Icon name="link" size={14} />{admin ? 'Client exposure' : 'Client links'}</span>
         <div className="summary-value">{stats.shareLinks}</div>
         <p className="text-body-secondary small mb-0">{stats.editLinks} editable · {stats.passwordLinks} password protected</p>
       </article>
       <article>
-        <span className="page-eyebrow">{admin ? 'Operations' : 'In progress'}</span>
+        <span className="page-eyebrow d-inline-flex align-items-center gap-1"><Icon name="timer" size={14} />{admin ? 'Operations' : 'In progress'}</span>
         <div className="summary-value">{admin ? stats.lockedDecks : stats.exportingDecks}</div>
         <p className="text-body-secondary small mb-0">{admin ? `${stats.exportingDecks} exporting · ${stats.failedExports} failed exports` : `${stats.lockedDecks} locked · ${stats.failedExports} failed exports`}</p>
       </article>
       <article>
-        <span className="page-eyebrow">Templates</span>
+        <span className="page-eyebrow d-inline-flex align-items-center gap-1"><Icon name="palette" size={14} />Templates</span>
         <div className="summary-value">{stats.activeTemplates}</div>
         <p className="text-body-secondary small mb-0">{stats.adminTemplates} admin-only · {stats.defaultTemplate || 'No default'} default</p>
       </article>
@@ -1246,14 +1346,34 @@ function Workbench({ deck, currentUser, onBack, onSend, onCancel }) {
           <PreviewFrame src={previewUrl} workbench reloadToken={previewReload} />
         </section>
         <section className="card shadow-sm workbench-chat">
-          <div className="card-header"><h3 className="h5 mb-0">Chat</h3></div>
+          <div className="card-header d-flex align-items-center gap-2">
+            <Icon name="chat" size={18} className="text-primary" />
+            <div>
+              <h3 className="h5 mb-0">Chat</h3>
+              <p className="text-body-secondary small mb-0">The agent edits the slide files directly; the preview updates as it works.</p>
+            </div>
+          </div>
           <div className="card-body border-bottom instruction-stream">
-            {(deck.messages?.length ? deck.messages : [{ role: 'agent', content: 'Ready for instructions.' }]).map((message, index) => (
+            {deck.messages?.length ? deck.messages.map((message, index) => (
               <article className={`chat-msg ${message.role === 'user' ? 'is-user' : 'is-agent'}`} key={`${message.role}-${index}`}>
                 <span className="chat-role">{message.role === 'user' ? 'You' : 'Agent'}</span>
                 {message.content}
               </article>
-            ))}
+            )) : (
+              <div className="chat-empty">
+                <p className="text-body-secondary small mb-2">Tell the agent what this deck should say — it drafts, restyles, and reorders slides on request. Try one of these:</p>
+                <div className="d-flex flex-wrap gap-2">
+                  {[
+                    'Add an agenda slide after the cover',
+                    'Rewrite the results slide for a C-level audience',
+                    'Tighten the copy across all slides',
+                    'Add a closing slide with next steps and owners',
+                  ].map((suggestion) => (
+                    <button key={suggestion} type="button" className="btn btn-outline-secondary btn-sm suggestion-chip" onClick={() => setInstruction(suggestion)}>{suggestion}</button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
           <div className="card-body">
             {sendError ? <section className="alert alert-danger" role="alert">{sendError}</section> : null}
@@ -1336,19 +1456,23 @@ function TemplatesView({ scaffolds, loading }) {
   return (
     <section>
       <p className="page-eyebrow mb-1">Workspace</p>
-      <h2 className="h3 mb-4">Templates</h2>
+      <h2 className="h3 mb-1">Templates</h2>
+      <p className="text-body-secondary mb-4" style={{ maxWidth: '44rem' }}>Every deck starts from a template: it carries the brand — fonts, colors, slide layouts — so the agent designs within your identity instead of from a blank page. Admins curate which templates are available.</p>
       <div className="row g-3">
         {loading ? <div className="col-12"><div className="card shadow-sm"><div className="card-body text-body-secondary">Loading templates...</div></div></div> : null}
         {!loading && !scaffolds.length ? <div className="col-12"><div className="card shadow-sm"><div className="card-body text-body-secondary">No templates found.</div></div></div> : null}
         {scaffolds.map((scaffold) => (
           <article className="col-12 col-lg-6" key={scaffold.key}>
             <div className="card shadow-sm h-100">
-              <div className="card-body">
-                <div className="d-flex align-items-start justify-content-between gap-2 mb-2">
-                  <h3 className="h5 mb-0">{scaffold.name}</h3>
-                  {scaffold.isDefault ? <span className="badge text-bg-primary">Default</span> : null}
+              <div className="card-body d-flex gap-3">
+                <span className="hero-step-icon template-icon" aria-hidden="true"><Icon name="palette" size={20} /></span>
+                <div>
+                  <div className="d-flex align-items-start justify-content-between gap-2 mb-2">
+                    <h3 className="h5 mb-0">{scaffold.name}</h3>
+                    {scaffold.isDefault ? <span className="badge text-bg-primary">Default</span> : null}
+                  </div>
+                  <p className="text-body-secondary small mb-0">{scaffold.description || scaffold.key}</p>
                 </div>
-                <p className="text-body-secondary small mb-0">{scaffold.description || scaffold.key}</p>
               </div>
             </div>
           </article>
