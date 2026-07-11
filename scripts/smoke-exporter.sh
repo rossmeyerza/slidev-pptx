@@ -88,6 +88,9 @@ const decks = {
   deckFile(deckId) {
     return `${workDir}/decks/${deckId === 'deck-a' ? 'a' : 'b'}/slides.md`;
   },
+  deckPath(deckId) {
+    return `${workDir}/decks/${deckId === 'deck-a' ? 'a' : 'b'}`;
+  },
   async updateMeta(deckId, patch) {
     metaUpdates.push({ deckId, patch });
     return { id: deckId, ...patch };

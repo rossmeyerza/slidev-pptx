@@ -58,6 +58,7 @@ APP_DOMAIN=app.example.com
 DECKS_DOMAIN=decks.example.com
 LOG_LEVEL=info
 AUTH_BYPASS=false
+AUTH_DEV_LINK=false
 AUTH_BOOTSTRAP_ADMIN_EMAIL=admin@example.com
 AUTH_BOOTSTRAP_ADMIN_NAME="Admin"
 AUTH_ORG_ID=default-org
@@ -205,8 +206,9 @@ local JSON fallback remains active.
 For local development only, set `AUTH_BYPASS=true` to skip login entirely and
 serve every request as an active admin user. Do not enable this for shared or
 production environments.
-Without SMTP configured, the API returns dev links in the JSON response so local
-setup can continue. Admins can invite employees or other admins from the app
+Without SMTP configured, setting `AUTH_DEV_LINK=true` makes the API return dev
+links in the JSON response so local setup can continue. Never enable it in
+production. Admins can invite employees or other admins from the app
 sidebar, change user roles/statuses, and disabling a user revokes active
 sessions while preserving at least one active admin.
 
@@ -218,7 +220,7 @@ deck APIs accept either that signed cookie or the legacy `slidev_session` cookie
 this lets the frontend move onto better-auth client APIs incrementally. The React
 app now includes a better-auth client wrapper and uses better-auth magic-link
 requests when both better-auth and SMTP are available; otherwise it falls back to
-the compatibility endpoint so local dev links still work without SMTP.
+the compatibility endpoint, where `AUTH_DEV_LINK=true` can expose local dev links.
 Regenerate the committed schema with `npm run auth:schema` after changing
 better-auth plugins or auth schema options.
 

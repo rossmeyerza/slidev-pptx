@@ -1,5 +1,5 @@
 // @ts-check
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { shouldAutoStartDashboardTour, shouldAutoStartWorkbenchTour, startDashboardTour, startWorkbenchTour } from './tour.js';
 
@@ -46,7 +46,7 @@ import {
   createAdminLayout,
   createDeck,
   createShare,
-  exportPptx,
+  exportDeck,
   getDeck,
   getDeckAgentSettings,
   getAdminSettings,
@@ -66,6 +66,7 @@ import {
   publishDeck,
   queryKeys,
   requestLogin,
+  revertDeck,
   restartDeckPreview,
   releaseDeckLock,
   removeCollaborator,
@@ -78,6 +79,7 @@ import {
   updateAdminSettings,
   updateDeckAgentSettings,
   updateUser,
+  uploadDeckAsset,
 } from './api.js';
 
 export function App() {
@@ -267,9 +269,9 @@ export function App() {
               }
             }}
             onPublish={async () => selectedDeck && refreshDeck(await publishDeck(selectedDeck.id))}
-            onExport={async () => {
+            onExport={async (format = 'pptx') => {
               if (!selectedDeck) return;
-              const result = await exportPptx(selectedDeck.id);
+              const result = await exportDeck(selectedDeck.id, format);
               const jobId = result.export?.id ?? result.id;
               const job = result.export ?? result;
               if (jobId) {
@@ -339,6 +341,16 @@ export function App() {
               if (!selectedDeck) return;
               refreshDeck(await sendInstructionStream(selectedDeck.id, instruction, onEvent));
               await queryClient.invalidateQueries({ queryKey: queryKeys.previewBuild(selectedDeck.id) });
+            }}
+            onRevert={async () => {
+              if (!selectedDeck) return;
+              refreshDeck(await revertDeck(selectedDeck.id));
+              await queryClient.invalidateQueries({ queryKey: queryKeys.deck(selectedDeck.id) });
+              await queryClient.invalidateQueries({ queryKey: queryKeys.livePreview(selectedDeck.id) });
+            }}
+            onUpload={async (file) => {
+              if (!selectedDeck) return null;
+              return uploadDeckAsset(selectedDeck.id, file);
             }}
             onCancel={async (runId) => {
               if (!selectedDeck) return;
@@ -863,10 +875,10 @@ function DeckDashboard({ user, decks, scaffolds, loading, onSelectDeck, onCreate
               <button className="btn btn-primary w-100" disabled={busy || !selectedScaffold} type="submit">Create</button>
             </div>
           </form>
-          <div className="border-top pt-3 mt-4">
+          {user?.role === 'admin' ? <div className="border-top pt-3 mt-4">
             <button type="button" className="btn btn-link btn-sm p-0 text-decoration-none d-inline-flex align-items-center gap-2" aria-expanded={showImport} onClick={() => setShowImport((value) => !value)}>
               <Icon name="upload" size={16} />
-              {showImport ? 'Hide PowerPoint import' : 'Have an existing PowerPoint? Import it'}
+              {showImport ? 'Hide legacy import' : 'Import PPTX (legacy)'}
             </button>
             {showImport ? (
               <form
@@ -886,7 +898,7 @@ function DeckDashboard({ user, decks, scaffolds, loading, onSelectDeck, onCreate
                 }}
               >
                 <div className="col-12">
-                  <p className="text-body-secondary small mb-0">Imports create a rough draft from the PowerPoint content; expect to refine layout and copy with the agent afterwards.</p>
+                  <p className="text-body-secondary small mb-0">Imports create a legacy-format deck; expect to refine layout and copy with the agent afterwards.</p>
                 </div>
                 <div className="col-12 col-lg-4">
                   <label className="form-label" htmlFor="importTitle">Deck title</label>
@@ -901,7 +913,7 @@ function DeckDashboard({ user, decks, scaffolds, loading, onSelectDeck, onCreate
                 </div>
               </form>
             ) : null}
-          </div>
+          </div> : null}
         </div>
       </div>
 
@@ -1000,6 +1012,8 @@ function DeckDetail({ deck, currentUser, loading, exportJob, onWork, onPublish, 
   const exportInProgress = exporting || ['queued', 'running'].includes(String(exportStatus).toLowerCase());
   const previewBuild = previewBuildQuery.data ?? deck.previewBuild ?? null;
   const customRuntime = isCustomRuntimeDeck(deck);
+  const currentExportFormat = currentExport?.format ?? 'pptx';
+  const currentExportLabel = currentExportFormat === 'pdf' ? 'PDF' : currentExportFormat === 'markdown' ? 'Markdown' : 'PPTX';
 
   return (
     <section>
@@ -1023,7 +1037,7 @@ function DeckDetail({ deck, currentUser, loading, exportJob, onWork, onPublish, 
             onClick={async () => {
               setExporting(true);
               try {
-                await onExport?.();
+                await onExport?.('pptx');
               } finally {
                 setExporting(false);
               }
@@ -1031,6 +1045,23 @@ function DeckDetail({ deck, currentUser, loading, exportJob, onWork, onPublish, 
           >
             {exportInProgress ? 'Exporting...' : 'Export PPTX'}
           </button>
+          {customRuntime ? (
+            <button
+              className="btn btn-outline-secondary"
+              type="button"
+              disabled={exportInProgress}
+              onClick={async () => {
+                setExporting(true);
+                try {
+                  await onExport?.('pdf');
+                } finally {
+                  setExporting(false);
+                }
+              }}
+            >
+              {exportInProgress ? 'Exporting...' : 'Export PDF'}
+            </button>
+          ) : null}
         </div>
       </div>
 
@@ -1159,17 +1190,17 @@ function DeckDetail({ deck, currentUser, loading, exportJob, onWork, onPublish, 
             <div className="card-header">
               <div className="d-flex align-items-center justify-content-between gap-2">
                 <div>
-                  <h3 className="h5 mb-1">PPTX export</h3>
+                  <h3 className="h5 mb-1">{currentExportLabel} export</h3>
                   <p className="text-body-secondary small mb-0">Latest job {currentExport?.id ? currentExport.id.slice(0, 8) : 'not started'}</p>
                 </div>
                 <span className={`badge ${exportStatusClass(exportStatus)}`}>{formatExportStatus(exportStatus)}</span>
               </div>
             </div>
             <div className="card-body export-card">
-              {exportInProgress ? <div className="progress mb-3" role="progressbar" aria-label="PPTX export running"><div className="progress-bar progress-bar-striped progress-bar-animated" style={{ width: '100%' }} /></div> : null}
+              {exportInProgress ? <div className="progress mb-3" role="progressbar" aria-label={`${currentExportLabel} export running`}><div className="progress-bar progress-bar-striped progress-bar-animated" style={{ width: '100%' }} /></div> : null}
               {currentExport?.updatedAt ? <p className="text-body-secondary small mb-2">Updated {formatDate(currentExport.updatedAt)}</p> : null}
               {currentExport?.error ? <section className="alert alert-danger py-2 mb-3" role="alert">{currentExport.error}</section> : null}
-              {currentExport?.downloadUrl ? <a className="btn btn-outline-primary btn-sm" href={currentExport.downloadUrl} target="_blank" rel="noreferrer">Download PPTX</a> : <span className="text-body-secondary">Use Export PPTX to start a new export.</span>}
+              {currentExport?.downloadUrl ? <a className="btn btn-outline-primary btn-sm" href={currentExport.downloadUrl} target="_blank" rel="noreferrer">Download {currentExportLabel}</a> : <span className="text-body-secondary">Use an export action to start a new export.</span>}
               {currentExport?.verification ? (
                 <p className="text-body-secondary small mb-0 mt-2">Verified {currentExport.verification.slideCount} slides and {currentExport.verification.imageCount} images.</p>
               ) : null}
@@ -1309,7 +1340,7 @@ function DeckAdminTools({ deck, onAdminTool, onLoadAgentSettings, onSaveAgentSet
   );
 }
 
-function Workbench({ deck, currentUser, onBack, onSend, onCancel }) {
+function Workbench({ deck, currentUser, onBack, onSend, onCancel, onRevert, onUpload }) {
   const [instruction, setInstruction] = useState('');
   const [sendError, setSendError] = useState('');
   const [streamStatus, setStreamStatus] = useState('');
@@ -1317,6 +1348,7 @@ function Workbench({ deck, currentUser, onBack, onSend, onCancel }) {
   const [currentRunId, setCurrentRunId] = useState('');
   const [sending, setSending] = useState(false);
   const [previewReload, setPreviewReload] = useState(0);
+  const assetInputRef = useRef(null);
   const livePreview = useQuery({
     queryKey: queryKeys.livePreview(deck?.id ?? ''),
     queryFn: () => startLivePreview(deck.id),
@@ -1361,12 +1393,24 @@ function Workbench({ deck, currentUser, onBack, onSend, onCancel }) {
           <PreviewFrame src={previewUrl} workbench reloadToken={previewReload} />
         </section>
         <section className="card shadow-sm workbench-chat" data-tour="workbench-chat">
-          <div className="card-header d-flex align-items-center gap-2">
-            <Icon name="chat" size={18} className="text-primary" />
-            <div>
-              <h3 className="h5 mb-0">Chat</h3>
-              <p className="text-body-secondary small mb-0">The agent edits the slide files directly; the preview updates as it works.</p>
+          <div className="card-header d-flex align-items-center justify-content-between gap-2">
+            <div className="d-flex align-items-center gap-2">
+              <Icon name="chat" size={18} className="text-primary" />
+              <div>
+                <h3 className="h5 mb-0">Chat</h3>
+                <p className="text-body-secondary small mb-0">The agent edits the slide files directly; the preview updates as it works.</p>
+              </div>
             </div>
+            {deck.snapshots?.length ? (
+              <button className="btn btn-outline-secondary btn-sm d-inline-flex align-items-center gap-1" type="button" disabled={sending || lockedByOther} onClick={async () => {
+                if (!window.confirm('Undo the last agent change?')) return;
+                setSendError('');
+                try { await onRevert?.(); } catch (error) { setSendError(error instanceof Error ? error.message : 'Could not undo the last change.'); }
+              }}>
+                <Icon name="timer" size={16} />
+                Undo last change
+              </button>
+            ) : null}
           </div>
           <div className="card-body border-bottom instruction-stream">
             {deck.messages?.length ? deck.messages.map((message, index) => (
@@ -1429,6 +1473,29 @@ function Workbench({ deck, currentUser, onBack, onSend, onCancel }) {
 	              <div className="d-flex flex-wrap align-items-center justify-content-between gap-2 mt-3">
                 <span className="text-body-secondary small">{sending ? `Agent: ${formatStreamStatus(streamStatus)}` : 'Changes are applied to the selected deck thread.'}</span>
                 <div className="btn-toolbar gap-2">
+                  <input
+                    ref={assetInputRef}
+                    className="d-none"
+                    type="file"
+                    accept=".png,.jpg,.jpeg,.gif,.webp,.svg,image/png,image/jpeg,image/gif,image/webp,image/svg+xml"
+                    onChange={async (event) => {
+                      const file = event.target.files?.[0];
+                      if (!file) return;
+                      setSendError('');
+                      try {
+                        const result = await onUpload?.(file);
+                        if (result?.path) setInstruction((current) => `${current}${current ? '\n' : ''}Use ${result.path} `);
+                      } catch (error) {
+                        setSendError(error instanceof Error ? error.message : 'Could not upload image.');
+                      } finally {
+                        event.target.value = '';
+                      }
+                    }}
+                  />
+                  <button className="btn btn-outline-secondary d-inline-flex align-items-center gap-1" disabled={sending || lockedByOther} type="button" onClick={() => assetInputRef.current?.click()}>
+                    <Icon name="upload" size={16} />
+                    Add image
+                  </button>
                   {sending && currentRunId ? (
                     <button className="btn btn-outline-danger" type="button" onClick={() => onCancel?.(currentRunId)}>Cancel</button>
                   ) : null}

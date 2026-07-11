@@ -64,6 +64,7 @@ log "starting server with Postgres auth on port $PORT"
   HOST=127.0.0.1 \
   PORT="$PORT" \
   PUBLIC_BASE_URL="http://127.0.0.1:$PORT" \
+  AUTH_DEV_LINK=true \
   AUTH_BOOTSTRAP_ADMIN_EMAIL="pg-admin@example.com" \
   AUTH_BOOTSTRAP_ADMIN_NAME="Postgres Admin" \
   node apps/server/dist/index.js

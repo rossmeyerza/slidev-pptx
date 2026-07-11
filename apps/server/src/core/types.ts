@@ -19,6 +19,7 @@ export interface DeckMeta {
   agent?: DeckAgentSettings;
   pptx?: {
     id: string;
+    format?: ExportFormat;
     status: ExportStatus;
     downloadUrl?: string;
     error?: string;
@@ -91,7 +92,7 @@ export interface DeckCollaboratorRecord {
   createdAt: string;
 }
 
-export type ExportFormat = 'pptx' | 'markdown';
+export type ExportFormat = 'pptx' | 'pdf' | 'markdown';
 export type ExportStatus = 'queued' | 'running' | 'succeeded' | 'failed';
 
 export interface ExportJob {
@@ -106,6 +107,9 @@ export interface ExportJob {
     ok: boolean;
     slideCount: number;
     imageCount: number;
+    expectedImageWidth?: number;
+    expectedImageHeight?: number;
+    errors?: string[];
   };
   outputPath?: string;
   downloadUrl?: string;
@@ -215,6 +219,7 @@ export interface SmtpConfig {
 
 export interface AuthConfig {
   bypass: boolean;
+  devLink: boolean;
   bootstrapAdminEmail?: string;
   bootstrapAdminName: string;
   sessionDays: number;

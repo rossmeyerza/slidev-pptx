@@ -15,6 +15,7 @@ title: Untitled deck
 
 Start writing your Slidev deck here.
 `;
+const SNAPSHOT_ROOTS = ['deck.json', 'theme.css', 'slides.md', 'slides', 'assets', 'public'] as const;
 
 /**
  * Owns deck folders under `.data/decks/<id>`.
@@ -62,7 +63,7 @@ export class DeckStore {
         const key = normalizeScaffoldKey(entry.name);
         if (!key) return null;
         const overrides = configured[key] ?? {};
-        const isActive = overrides.isActive ?? true;
+        const isActive = overrides.isActive ?? await fs.access(path.join(root, key, 'deck.json')).then(() => true).catch(() => false);
         const minRole = overrides.minRole ?? 'employee';
         if (!input.includeInactive && !isActive) return null;
         if (input.userRole !== 'admin' && minRole === 'admin') return null;
@@ -270,6 +271,56 @@ export class DeckStore {
       statusCode: 409,
       activeEditorUserId: meta.activeEditorUserId,
     });
+  }
+
+  /** Copies all agent-editable deck content into a retained local snapshot. */
+  async snapshotDeck(id: string): Promise<string> {
+    this.assertDeckId(id);
+    const snapshotId = `${snapshotTimestamp()}-${randomUUID().slice(0, 8)}`;
+    const snapshotDir = path.join(this.deckDir(id), '.snapshots', snapshotId);
+    await fs.mkdir(snapshotDir, { recursive: true });
+    for (const root of SNAPSHOT_ROOTS) {
+      const source = path.join(this.deckDir(id), root);
+      const target = path.join(snapshotDir, root);
+      await copySnapshotEntry(source, target);
+    }
+    const snapshotRoot = path.join(this.deckDir(id), '.snapshots');
+    const entries = await fs.readdir(snapshotRoot, { withFileTypes: true });
+    const older = entries
+      .filter((entry) => entry.isDirectory() && isSnapshotId(entry.name))
+      .map((entry) => entry.name)
+      .sort((left, right) => right.localeCompare(left))
+      .slice(10);
+    await Promise.all(older.map((entry) => fs.rm(path.join(snapshotRoot, entry), { recursive: true, force: true })));
+    return snapshotId;
+  }
+
+  /** Lists retained snapshots newest first. */
+  async listSnapshots(id: string): Promise<{ id: string; createdAt: string }[]> {
+    this.assertDeckId(id);
+    const root = path.join(this.deckDir(id), '.snapshots');
+    const entries = await fs.readdir(root, { withFileTypes: true }).catch(() => []);
+    const snapshots = await Promise.all(entries.filter((entry) => entry.isDirectory() && isSnapshotId(entry.name)).map(async (entry) => ({
+      id: entry.name,
+      createdAt: (await fs.stat(path.join(root, entry.name))).mtime.toISOString(),
+    })));
+    return snapshots.sort((left, right) => right.id.localeCompare(left.id)).slice(0, 10);
+  }
+
+  /** Restores the editable set exactly as captured by a retained snapshot. */
+  async revertToSnapshot(id: string, snapshotId?: string): Promise<void> {
+    this.assertDeckId(id);
+    const selected = snapshotId ?? (await this.listSnapshots(id))[0]?.id;
+    if (!selected || !isSnapshotId(selected)) throw Object.assign(new Error('Snapshot not found'), { statusCode: 404 });
+    const snapshotDir = path.join(this.deckDir(id), '.snapshots', selected);
+    const exists = await fs.stat(snapshotDir).then((stat) => stat.isDirectory()).catch(() => false);
+    if (!exists) throw Object.assign(new Error('Snapshot not found'), { statusCode: 404 });
+    for (const root of SNAPSHOT_ROOTS) {
+      const target = path.join(this.deckDir(id), root);
+      await fs.rm(target, { recursive: true, force: true });
+      await copySnapshotEntry(path.join(snapshotDir, root), target);
+    }
+    await this.updateMeta(id, {});
   }
 
   /**
@@ -514,6 +565,27 @@ export class DeckStore {
       throw Object.assign(new Error('Invalid deck id'), { statusCode: 400 });
     }
   }
+}
+
+function snapshotTimestamp(): string {
+  return new Date().toISOString().replace(/[:.]/g, '-');
+}
+
+function isSnapshotId(value: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z-[a-f0-9]{8}$/i.test(value);
+}
+
+async function copySnapshotEntry(source: string, target: string): Promise<void> {
+  const exists = await fs.lstat(source).catch(() => undefined);
+  if (!exists) return;
+  await fs.cp(source, target, {
+    recursive: true,
+    force: false,
+    filter: (entry) => {
+      const name = path.basename(entry);
+      return !name.startsWith('.') && name !== 'node_modules' && name !== 'dist';
+    },
+  });
 }
 
 function isIgnorableLinkError(error: unknown): boolean {

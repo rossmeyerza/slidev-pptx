@@ -59,6 +59,7 @@ log "starting server with deepagents on port $PORT"
   HOST=127.0.0.1 \
   PORT="$PORT" \
   PUBLIC_BASE_URL="http://127.0.0.1:$PORT" \
+  AUTH_DEV_LINK=true \
   AUTH_BOOTSTRAP_ADMIN_EMAIL="deep-admin@example.com" \
   AUTH_BOOTSTRAP_ADMIN_NAME="Deep Agent Admin" \
   node apps/server/dist/index.js

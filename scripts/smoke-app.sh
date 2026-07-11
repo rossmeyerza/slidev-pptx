@@ -102,6 +102,7 @@ log "starting isolated server on port $PORT"
 	  DECKS_DOMAIN="decks.smoke.test" \
 	  AGENT_BASE_URL="http://127.0.0.1:$AGENT_PORT/v1" \
   AGENT_MODEL="smoke-model" \
+  AUTH_DEV_LINK=true \
   AUTH_BOOTSTRAP_ADMIN_EMAIL="admin@example.com" \
   AUTH_BOOTSTRAP_ADMIN_NAME="Smoke Admin" \
   node apps/server/dist/index.js
@@ -130,6 +131,13 @@ login_url="$(printf '%s' "$login_payload" | json_string loginUrl)"
 log "consuming login link"
 curl -fsS -c "$COOKIE_JAR" "$login_url" >/dev/null
 curl -fsS -b "$COOKIE_JAR" "http://127.0.0.1:$PORT/api/auth/me" | grep -q '"role":"admin"' || fail "admin session was not established"
+log "checking login rate limit"
+rate_status=""
+for _ in {1..6}; do
+  rate_status="$(curl -sS -o "$WORK_DIR/rate-limit.json" -w '%{http_code}' -X POST "http://127.0.0.1:$PORT/api/auth/login" -H 'content-type: application/json' --data '{"email":"ratelimit-smoke@example.com"}')"
+done
+[[ "$rate_status" == "429" ]] || fail "sixth login attempt should be rate limited, got HTTP $rate_status"
+grep -q 'Too many login attempts' "$WORK_DIR/rate-limit.json" || fail "rate limit response should explain the retry"
 agent_runtime_payload="$(curl -fsS -b "$COOKIE_JAR" "http://127.0.0.1:$PORT/api/agent/runtime")"
 printf '%s' "$agent_runtime_payload" | grep -q '"runtime":"deepagents"' || fail "agent runtime should be deepagents"
 printf '%s' "$agent_runtime_payload" | grep -q '"enabled":false' || fail "LangGraph checkpointing should be disabled without DATABASE_URL"
@@ -141,8 +149,6 @@ printf '%s' "$agent_runtime_payload" | grep -q '"memberModel":"smoke-member-mode
 agent_models_payload="$(curl -fsS -b "$COOKIE_JAR" "http://127.0.0.1:$PORT/api/admin/agent-models?baseUrl=http%3A%2F%2F127.0.0.1%3A$AGENT_PORT%2Fv1")"
 printf '%s' "$agent_models_payload" | grep -q '"smoke-admin-model"' || fail "admin agent models should load from provider"
 printf '%s' "$agent_models_payload" | grep -q '"smoke-member-model"' || fail "admin agent models should include member model"
-curl -fsS -b "$COOKIE_JAR" "http://127.0.0.1:$PORT/api/scaffolds" | grep -q '"key":"commercial-profile"' || fail "commercial scaffold was not listed"
-curl -fsS -b "$COOKIE_JAR" "http://127.0.0.1:$PORT/api/scaffolds" | grep -q '"key":"basic"' || fail "basic scaffold was not listed"
 curl -fsS -b "$COOKIE_JAR" -X PATCH "http://127.0.0.1:$PORT/api/admin/settings" -H 'content-type: application/json' --data '{"scaffolds":{"defaultKey":"commercial-profile","items":{"basic":{"name":"Admin Basic","description":"Admin-only smoke scaffold","isActive":true,"minRole":"admin"},"commercial-profile":{"name":"Commercial Profile","description":"Default commercial scaffold","isActive":true,"minRole":"employee"}}}}' | grep -q '"defaultKey":"commercial-profile"' || fail "admin settings should update scaffold curation"
 curl -fsS -b "$COOKIE_JAR" "http://127.0.0.1:$PORT/api/scaffolds" | grep -q '"name":"Admin Basic"' || fail "admin scaffold list should include curated template name"
 

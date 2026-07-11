@@ -6,11 +6,14 @@ import type { AppConfig, ExportFormat, ExportJob } from '../core/types.js';
 import { DeckStore } from '../decks/decks.js';
 import { isNodeError, readRequiredJson, writeJson } from '../core/storage.js';
 import { silentLogger, type ServiceLogger } from '../core/logger.js';
+import { exportHtmlDeck } from './htmlDeckExporter.js';
 
 interface QueuedExport {
   job: ExportJob;
   markdown: string;
   mode: string;
+  htmlRuntime: boolean;
+  deckDir: string;
 }
 
 /**
@@ -72,6 +75,7 @@ export class ExportService {
       await this.decks.updateMeta(job.deckId, {
         pptx: {
           id: job.id,
+          format: job.format,
           status: 'failed',
           error: reason,
           updatedAt: failedAt,
@@ -82,16 +86,21 @@ export class ExportService {
     return reconciled;
   }
 
-  /**
-   * Starts an export job. Markdown exports complete in-process; PPTX exports
-   * invoke the repository's built `slidev-to-pptx` CLI.
-   */
+  /** Starts a queued export, selecting the native HTML or legacy Slidev path. */
   async start(deckId: string, input: { format?: ExportFormat; mode?: string }): Promise<ExportJob> {
     await this.whenReady();
     const deck = await this.decks.get(deckId);
     const format = input.format ?? 'pptx';
-    if (format !== 'pptx' && format !== 'markdown') {
+    if (format !== 'pptx' && format !== 'pdf' && format !== 'markdown') {
       throw Object.assign(new Error('Unsupported export format'), { statusCode: 400 });
+    }
+    const deckDir = this.decks.deckPath(deckId);
+    const htmlRuntime = await fs.access(path.join(deckDir, 'deck.json')).then(() => true).catch(() => false);
+    if (htmlRuntime && format === 'markdown') {
+      throw Object.assign(new Error('Markdown export is not available for HTML decks'), { statusCode: 400 });
+    }
+    if (!htmlRuntime && format === 'pdf') {
+      throw Object.assign(new Error('PDF export is not available for legacy Slidev decks'), { statusCode: 400 });
     }
 
     const now = new Date().toISOString();
@@ -107,7 +116,7 @@ export class ExportService {
     await this.writeJob(job);
     this.logger.info({ jobId: job.id, deckId, format, mode: job.mode }, 'export queued');
 
-    this.enqueue({ job, markdown: deck.markdown, mode: job.mode ?? 'screenshot' });
+    this.enqueue({ job, markdown: deck.markdown, mode: job.mode ?? 'screenshot', htmlRuntime, deckDir });
 
     return job;
   }
@@ -131,7 +140,7 @@ export class ExportService {
       const item = this.queue.shift();
       if (!item) return;
       this.running += 1;
-      void this.run(item.job, item.markdown, item.mode)
+      void this.run(item)
         .catch((error: unknown) => this.failJob(item.job, error))
         .finally(() => {
           this.running -= 1;
@@ -144,6 +153,7 @@ export class ExportService {
     const failedAt = new Date().toISOString();
     const failed = {
       id: job.id,
+      format: job.format,
       status: 'failed' as const,
       error: error instanceof Error ? error.message : String(error),
       updatedAt: failedAt,
@@ -158,7 +168,8 @@ export class ExportService {
     this.logger.error({ jobId: job.id, deckId: job.deckId, error: failed.error }, 'export failed');
   }
 
-  private async run(job: ExportJob, markdown: string, mode: string): Promise<void> {
+  private async run(item: QueuedExport): Promise<void> {
+    const { job, markdown, mode, htmlRuntime, deckDir } = item;
     this.logger.info({ jobId: job.id, deckId: job.deckId, format: job.format, mode }, 'export started');
     await this.writeJob({ ...job, status: 'running', updatedAt: new Date().toISOString() });
 
@@ -175,12 +186,47 @@ export class ExportService {
       await this.decks.updateMeta(job.deckId, {
         pptx: {
           id: job.id,
+          format: job.format,
           status: 'succeeded',
           downloadUrl: `/api/exports/${job.id}/download`,
           updatedAt: new Date().toISOString(),
         },
       });
       this.logger.info({ jobId: job.id, deckId: job.deckId, format: job.format, outputPath }, 'export succeeded');
+      return;
+    }
+
+    if (htmlRuntime) {
+      const extension = job.format === 'pdf' ? 'pdf' : 'pptx';
+      const outputPath = path.join(this.config.dataDir, 'exports', `${job.id}.${extension}`);
+      const controller = new AbortController();
+      const result = await withTimeout(exportHtmlDeck({
+        deckDir,
+        shellDir: path.join(this.config.repoRoot, 'runtime'),
+        format: job.format as 'pptx' | 'pdf',
+        outputPath,
+        signal: controller.signal,
+      }), this.config.export.timeoutMs, () => controller.abort());
+      const completedAt = new Date().toISOString();
+      await this.writeJob({
+        ...job,
+        status: 'succeeded',
+        updatedAt: completedAt,
+        outputPath,
+        downloadUrl: `/api/exports/${job.id}/download`,
+        verification: result.verification,
+      });
+      await this.decks.updateMeta(job.deckId, {
+        pptx: {
+          id: job.id,
+          format: job.format,
+          status: 'succeeded',
+          downloadUrl: `/api/exports/${job.id}/download`,
+          updatedAt: completedAt,
+          verification: result.verification,
+        },
+      });
+      this.logger.info({ jobId: job.id, deckId: job.deckId, format: job.format, outputPath, verification: result.verification }, 'export succeeded');
       return;
     }
 
@@ -214,6 +260,7 @@ export class ExportService {
     await this.decks.updateMeta(job.deckId, {
       pptx: {
         id: job.id,
+        format: job.format,
         status: 'succeeded',
         downloadUrl: `/api/exports/${job.id}/download`,
         updatedAt: completedAt,
@@ -263,6 +310,19 @@ export class ExportService {
       throw Object.assign(new Error('Invalid export job id'), { statusCode: 400 });
     }
   }
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, onTimeout?: () => void): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      onTimeout?.();
+      reject(new Error(`Export process timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+    promise.then(
+      (value) => { clearTimeout(timeout); resolve(value); },
+      (error) => { clearTimeout(timeout); reject(error); },
+    );
+  });
 }
 
 function runNode(cwd: string, args: string[], timeoutMs: number): Promise<string> {

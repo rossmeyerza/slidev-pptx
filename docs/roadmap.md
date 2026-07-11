@@ -5,7 +5,7 @@ brief an agent, watch branded slides build live, share a link — works and is
 differentiated. The gaps are in the trust/completeness layer. Three milestones
 to client-facing GTM.
 
-## Milestone 1 — "The product doesn't lie" (P0, in progress)
+## Milestone 1 — "The product doesn't lie" (P0, shipped 2026-07-11)
 
 1. **Export retarget + PDF.** PPTX export still spawns the Slidev CLI against
    `slides.md`, which for HTML-runtime decks is a stub — the product's native

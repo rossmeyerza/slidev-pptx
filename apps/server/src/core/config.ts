@@ -52,6 +52,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     smtp: smtpConfig(env),
     auth: {
       bypass: env.AUTH_BYPASS === 'true',
+      devLink: env.AUTH_DEV_LINK === 'true',
       bootstrapAdminEmail: env.AUTH_BOOTSTRAP_ADMIN_EMAIL,
       bootstrapAdminName: env.AUTH_BOOTSTRAP_ADMIN_NAME ?? 'Admin',
       sessionDays: parsePositiveInt(env.AUTH_SESSION_DAYS, 14),

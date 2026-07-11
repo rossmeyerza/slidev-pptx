@@ -117,7 +117,12 @@ export class AuthService {
     await this.saveToken(record);
     const loginUrl = this.urlForToken(rawToken);
     const result = await this.mailer.send(loginEmail(email, loginUrl));
-    return { sent: result.sent, loginUrl: result.sent ? undefined : loginUrl, devMessage: result.devMessage, deliveryError: result.deliveryError };
+    return {
+      sent: result.sent,
+      loginUrl: !result.sent && this.config.auth.devLink ? loginUrl : undefined,
+      devMessage: this.config.auth.devLink ? result.devMessage : undefined,
+      deliveryError: result.deliveryError,
+    };
   }
 
   async inviteUser(input: { email: string; name?: string; role: UserRole; createdByUserId: string }) {

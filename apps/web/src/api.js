@@ -5,7 +5,7 @@ import { betterAuthSignOut, getBetterAuthSession, requestBetterAuthMagicLink } f
  * @typedef {{ id:string, email:string, name:string, role:'admin'|'employee', status:string }} User
  * @typedef {{ baseUrl?:string, memberModel?:string, adminModel?:string, timeoutMs?:number, overrides?:Record<string, boolean> }} DeckAgentSettings
  * @typedef {{ deckId:string, kind:string, status:'missing'|'building'|'fresh'|'stale'|'failed', builtAt?:string, error?:string }} PreviewBuild
- * @typedef {{ id:string, title:string, owner:string, status:string, scaffoldKey?:string, activeEditorUserId?:string, updatedAt?:string, previewUrl?:string, publishedUrl?:string, shares?:ShareLink[], messages?:ChatMessage[], agent?:DeckAgentSettings, previewBuild?:PreviewBuild, pptx?:{ id:string, status:string, downloadUrl?:string, error?:string, updatedAt?:string, verification?:{ slideCount:number, imageCount:number } } }} Deck
+ * @typedef {{ id:string, title:string, owner:string, status:string, scaffoldKey?:string, activeEditorUserId?:string, updatedAt?:string, previewUrl?:string, publishedUrl?:string, shares?:ShareLink[], messages?:ChatMessage[], snapshots?:{id:string,createdAt:string}[], agent?:DeckAgentSettings, previewBuild?:PreviewBuild, pptx?:{ id:string, format?:'pptx'|'pdf'|'markdown', status:string, downloadUrl?:string, error?:string, updatedAt?:string, verification?:{ slideCount:number, imageCount:number } } }} Deck
  * @typedef {{ id:string, deckId:string, userId:string, role:'editor'|'viewer', createdAt:string, user?:User }} Collaborator
  * @typedef {{ key:string, name:string, description:string, isDefault:boolean, isActive?:boolean, minRole?:'admin'|'employee' }} Scaffold
  * @typedef {{ id:string, url:string, name:string, email:string, permission?:'view'|'edit', hasPassword?:boolean }} ShareLink
@@ -275,8 +275,21 @@ export function removeCollaborator(deckId, userId) {
   return api(`/api/decks/${encodeURIComponent(deckId)}/collaborators/${encodeURIComponent(userId)}`, { method: 'DELETE' });
 }
 
-export async function exportPptx(deckId) {
-  return api(`/api/decks/${encodeURIComponent(deckId)}/export`, { method: 'POST', body: JSON.stringify({ format: 'pptx' }) });
+export async function exportDeck(deckId, format = 'pptx') {
+  return api(`/api/decks/${encodeURIComponent(deckId)}/export`, { method: 'POST', body: JSON.stringify({ format }) });
+}
+
+export async function revertDeck(deckId, snapshotId) {
+  const payload = await api(`/api/decks/${encodeURIComponent(deckId)}/revert`, { method: 'POST', body: JSON.stringify(snapshotId ? { snapshotId } : {}) });
+  return normalizeDeck(payload.deck ?? payload.data ?? payload);
+}
+
+export async function uploadDeckAsset(deckId, file) {
+  const contentBase64 = await fileToBase64(file);
+  return api(`/api/decks/${encodeURIComponent(deckId)}/assets`, {
+    method: 'POST',
+    body: JSON.stringify({ filename: file.name, contentBase64 }),
+  });
 }
 
 export async function getExport(jobId) {

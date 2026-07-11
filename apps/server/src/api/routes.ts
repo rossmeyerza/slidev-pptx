@@ -18,6 +18,8 @@ import { AgentRunService } from '../agent/agentRuns.js';
 import { formatSettings, SettingsService } from '../decks/settings.js';
 import { AdminToolService } from '../decks/adminTools.js';
 import { silentLogger, type ServiceLogger } from '../core/logger.js';
+import { promises as fs } from 'node:fs';
+import { RateLimiter } from '../core/rateLimit.js';
 
 /**
  * Wires v1 JSON API routes for decks, sharing, publishing, and exports.
@@ -39,6 +41,8 @@ export function createApiRouter(
   const settings = new SettingsService(config);
   const adminTools = new AdminToolService(decks);
   const runtimeEvents = new RuntimeEventHub();
+  const loginRateLimiter = new RateLimiter(5, 15 * 60_000);
+  const sharePasswordRateLimiter = new RateLimiter(10, 15 * 60_000);
   const runtimeShellDir = path.join(config.repoRoot, 'runtime');
   const router = new Router();
 
@@ -151,7 +155,11 @@ export function createApiRouter(
 
   router.add('POST', '/api/auth/login', async (req, res) => {
     const body = asObject(req.body);
-    sendJson(res, 200, await auth.requestLogin({ email: requiredString(body.email, 'email') }));
+    const email = requiredString(body.email, 'email').trim().toLowerCase();
+    if (!loginRateLimiter.consume(`${requestIp(req)}:${email}`)) {
+      throw Object.assign(new Error('Too many login attempts. Try again later.'), { statusCode: 429 });
+    }
+    sendJson(res, 200, await auth.requestLogin({ email }));
   });
 
   router.add('GET', '/auth/callback', async (req, res) => {
@@ -228,11 +236,11 @@ export function createApiRouter(
       ownerUserId: context.user.id,
     });
     scheduleDraftBuildIfNeeded(slidev, deck);
-    sendJson(res, 201, await formatDeck(deck, await shares.sharesForDeck(deck.meta.id), chat, slidev));
+    sendJson(res, 201, await formatDeck(deck, await shares.sharesForDeck(deck.meta.id), chat, decks, slidev));
   });
 
   router.add('POST', '/api/imports/pptx', async (req, res) => {
-    const context = await auth.requireUser(req);
+    const context = await auth.requireAdmin(req);
     const body = asObject(req.body);
     const deck = await imports.importPptx({
       filename: optionalString(body.filename),
@@ -241,14 +249,14 @@ export function createApiRouter(
       ownerUserId: context.user.id,
     });
     scheduleDraftBuild(slidev, deck.meta.id);
-    sendJson(res, 201, await formatDeck(deck, await shares.sharesForDeck(deck.meta.id), chat, slidev));
+    sendJson(res, 201, await formatDeck(deck, await shares.sharesForDeck(deck.meta.id), chat, decks, slidev));
   });
 
   router.add('GET', '/api/decks/:id', async (req, res) => {
     const context = await auth.requireUser(req);
     await requireDeckAccess(decks, collaborators, req.params.id, context.user, 'view');
     const deck = await decks.get(req.params.id);
-    sendJson(res, 200, await formatDeck(deck, await shares.sharesForDeck(req.params.id), chat, slidev));
+    sendJson(res, 200, await formatDeck(deck, await shares.sharesForDeck(req.params.id), chat, decks, slidev));
   });
 
   router.add('PUT', '/api/decks/:id', async (req, res) => {
@@ -262,7 +270,7 @@ export function createApiRouter(
     });
     runtimeEvents.emit(deck.meta.id);
     scheduleDraftBuildIfNeeded(slidev, deck);
-    sendJson(res, 200, await formatDeck(deck, await shares.sharesForDeck(req.params.id), chat, slidev));
+    sendJson(res, 200, await formatDeck(deck, await shares.sharesForDeck(req.params.id), chat, decks, slidev));
   });
 
   router.add('POST', '/api/decks/:id/instructions', async (req, res) => {
@@ -272,7 +280,50 @@ export function createApiRouter(
     const deck = await recordInstruction(config, decks, chat, agentRuns, req.params.id, asObject(req.body), context.user);
     runtimeEvents.emit(deck.meta.id);
     scheduleDraftBuildIfNeeded(slidev, deck);
-    sendJson(res, 200, await formatDeck(deck, await shares.sharesForDeck(req.params.id), chat, slidev));
+    sendJson(res, 200, await formatDeck(deck, await shares.sharesForDeck(req.params.id), chat, decks, slidev));
+  });
+
+  router.add('POST', '/api/decks/:id/revert', async (req, res) => {
+    const context = await auth.requireUser(req);
+    await requireDeckAccess(decks, collaborators, req.params.id, context.user, 'edit');
+    await decks.requireEditLock(req.params.id, context.user.id);
+    const body = asObject(req.body);
+    await decks.revertToSnapshot(req.params.id, optionalString(body.snapshotId));
+    await chat.append(req.params.id, [{ role: 'agent', content: 'Reverted the last agent change.', createdAt: new Date().toISOString() }]);
+    const deck = await decks.get(req.params.id);
+    runtimeEvents.emit(req.params.id);
+    scheduleDraftBuildIfNeeded(slidev, deck);
+    sendJson(res, 200, await formatDeck(deck, await shares.sharesForDeck(req.params.id), chat, decks, slidev));
+  });
+
+  router.add('POST', '/api/decks/:id/assets', async (req, res) => {
+    const context = await auth.requireUser(req);
+    await requireDeckAccess(decks, collaborators, req.params.id, context.user, 'edit');
+    await decks.requireEditLock(req.params.id, context.user.id);
+    const body = asObject(req.body);
+    const requestedName = requiredString(body.filename, 'filename').replaceAll('\\', '/');
+    const filename = path.posix.basename(requestedName);
+    const extension = path.extname(filename).slice(1).toLowerCase();
+    if (!['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'ttf', 'otf', 'woff', 'woff2'].includes(extension)) {
+      throw Object.assign(new Error('Unsupported asset type'), { statusCode: 400 });
+    }
+    const encoded = requiredString(body.contentBase64, 'contentBase64');
+    if (!/^[A-Za-z0-9+/]*={0,2}$/.test(encoded) || encoded.length % 4 !== 0) {
+      throw Object.assign(new Error('Invalid base64 asset content'), { statusCode: 400 });
+    }
+    const data = Buffer.from(encoded, 'base64');
+    if (data.length > 8 * 1024 * 1024) throw Object.assign(new Error('Asset exceeds the 8 MB limit'), { statusCode: 413 });
+    const assetsDir = path.join(decks.deckPath(req.params.id), 'assets');
+    await fs.mkdir(assetsDir, { recursive: true });
+    const stem = path.basename(filename, path.extname(filename));
+    let finalName = filename;
+    for (let suffix = 1; await fs.access(path.join(assetsDir, finalName)).then(() => true).catch(() => false); suffix += 1) {
+      finalName = `${stem}-${suffix}.${extension}`;
+    }
+    await fs.writeFile(path.join(assetsDir, finalName), data, { flag: 'wx' });
+    const relativePath = `assets/${finalName}`;
+    runtimeEvents.emit(req.params.id, [relativePath]);
+    sendJson(res, 201, { path: relativePath });
   });
 
   router.add('POST', '/api/decks/:id/chat', async (req, res) => {
@@ -282,7 +333,7 @@ export function createApiRouter(
     const deck = await recordInstruction(config, decks, chat, agentRuns, req.params.id, asObject(req.body), context.user);
     runtimeEvents.emit(deck.meta.id);
     scheduleDraftBuildIfNeeded(slidev, deck);
-    sendJson(res, 200, await formatDeck(deck, await shares.sharesForDeck(req.params.id), chat, slidev));
+    sendJson(res, 200, await formatDeck(deck, await shares.sharesForDeck(req.params.id), chat, decks, slidev));
   });
 
   router.add('POST', '/api/decks/:id/messages', async (req, res) => {
@@ -304,7 +355,7 @@ export function createApiRouter(
       });
       runtimeEvents.emit(deck.meta.id);
       scheduleDraftBuildIfNeeded(slidev, deck);
-      sendSse(res, 'done', { deck: await formatDeck(deck, await shares.sharesForDeck(req.params.id), chat, slidev) });
+      sendSse(res, 'done', { deck: await formatDeck(deck, await shares.sharesForDeck(req.params.id), chat, decks, slidev) });
     } catch (error) {
       sendSse(res, 'error', { error: error instanceof Error ? error.message : 'Instruction failed' });
     } finally {
@@ -337,7 +388,7 @@ export function createApiRouter(
     await requireDeckAccess(decks, collaborators, req.params.id, context.user, 'edit');
     const meta = await decks.acquireEditLock(req.params.id, context.user.id);
     const deck = await decks.get(meta.id);
-    sendJson(res, 200, await formatDeck(deck, await shares.sharesForDeck(req.params.id), chat));
+    sendJson(res, 200, await formatDeck(deck, await shares.sharesForDeck(req.params.id), chat, decks));
   });
 
   router.add('DELETE', '/api/decks/:id/lock', async (req, res) => {
@@ -345,7 +396,7 @@ export function createApiRouter(
     await requireDeckAccess(decks, collaborators, req.params.id, context.user, 'view');
     const meta = await decks.releaseEditLock(req.params.id, context.user.id);
     const deck = await decks.get(meta.id);
-    sendJson(res, 200, await formatDeck(deck, await shares.sharesForDeck(req.params.id), chat));
+    sendJson(res, 200, await formatDeck(deck, await shares.sharesForDeck(req.params.id), chat, decks));
   });
 
   router.add('POST', '/api/decks/:id/live', async (req, res) => {
@@ -495,7 +546,7 @@ export function createApiRouter(
     const deck = await shares.getSharedDeck(req.params.token);
     const visitor = await shares.visitorForShare(req.params.token, readCookie(req.headers.cookie ?? '', shareVisitorCookieName(req.params.token)));
     sendJson(res, 200, {
-      ...(await formatDeck(deck, [], chat)),
+      ...(await formatDeck(deck, [], chat, decks)),
       share: formatShare(share),
       visitor,
       passwordRequired: false,
@@ -504,6 +555,9 @@ export function createApiRouter(
   });
 
   router.add('POST', '/api/share/:token/password', async (req, res) => {
+    if (!sharePasswordRateLimiter.consume(`${req.params.token}:${requestIp(req)}`)) {
+      throw Object.assign(new Error('Too many password attempts. Try again later.'), { statusCode: 429 });
+    }
     const body = asObject(req.body);
     const value = await shares.verifyPassword(req.params.token, optionalString(body.password));
     res.setHeader('set-cookie', sharePasswordCookie(req.params.token, value));
@@ -532,7 +586,7 @@ export function createApiRouter(
     runtimeEvents.emit(updated.meta.id);
     scheduleDraftBuildIfNeeded(slidev, updated);
     sendJson(res, 200, {
-      ...(await formatDeck(updated, [], chat, slidev)),
+      ...(await formatDeck(updated, [], chat, decks, slidev)),
       previewUrl: `/share/${encodeURIComponent(req.params.token)}/deck/#/1`,
       share: formatShare(share),
       visitor,
@@ -605,7 +659,7 @@ export function createApiRouter(
     await slidev.build(req.params.id, 'published');
     const publish = await shares.publish(req.params.id, optionalString(body.channel) ?? 'local');
     const deck = await decks.get(req.params.id);
-    sendJson(res, 200, { publish, deck: await formatDeck(deck, await shares.sharesForDeck(req.params.id), chat) });
+    sendJson(res, 200, { publish, deck: await formatDeck(deck, await shares.sharesForDeck(req.params.id), chat, decks) });
   });
 
   router.add('POST', '/api/decks/:id/export', async (req, res) => {
@@ -642,7 +696,7 @@ export function createApiRouter(
     const job = await exports.get(req.params.id);
     await requireDeckAccess(decks, collaborators, job.deckId, context.user, 'view');
     assertDownloadable(job);
-    await sendFile(res, job.outputPath, `deck-${job.id}.${job.format === 'pptx' ? 'pptx' : 'md'}`);
+    await sendFile(res, job.outputPath, `deck-${job.id}.${job.format === 'markdown' ? 'md' : job.format}`);
   });
 
   router.add('GET', '/api/decks/:id/runtime/events', async (req, res) => {
@@ -1070,6 +1124,7 @@ async function formatDeck(
   deck: Awaited<ReturnType<DeckStore['get']>>,
   deckShares: Awaited<ReturnType<ShareService['sharesForDeck']>>,
   chat: ChatService,
+  decks: DeckStore,
   slidev?: SlidevBuildService,
 ) {
   const messages = await chat.list(deck.meta.id);
@@ -1082,6 +1137,7 @@ async function formatDeck(
     messages: messages.length ? messages : deck.meta.messages ?? [],
     agent: formatDeckAgentSettings(undefined, deck.meta.agent),
     pptx: deck.meta.pptx,
+    snapshots: await decks.listSnapshots(deck.meta.id),
     previewBuild: slidev ? await slidev.status(deck.meta.id, 'draft') : undefined,
   };
 }
@@ -1248,6 +1304,7 @@ async function recordInstruction(
     throw Object.assign(new Error('Instruction is required'), { statusCode: 400 });
   }
   const deck = await decks.get(id);
+  await decks.snapshotDeck(id);
   const now = new Date().toISOString();
   const runConfig = agentRunConfig(config, user, deck);
   const controller = new AbortController();
@@ -1415,6 +1472,12 @@ function optionalString(value: unknown): string | undefined {
   return typeof value === 'string' ? value : undefined;
 }
 
+function requestIp(req: JsonRequest): string {
+  const forwarded = req.headers['x-forwarded-for'];
+  const value = Array.isArray(forwarded) ? forwarded[0] : forwarded;
+  return value?.split(',')[0]?.trim() || req.socket.remoteAddress || 'unknown';
+}
+
 function optionalPositiveInt(value: unknown, label: string): number | undefined {
   if (value === undefined || value === null || value === '') return undefined;
   const parsed = typeof value === 'number' ? value : Number(value);
@@ -1441,7 +1504,7 @@ function optionalUserStatus(value: unknown): UserRecord['status'] | undefined {
 
 function optionalExportFormat(value: unknown): ExportFormat | undefined {
   if (value === undefined) return undefined;
-  if (value === 'pptx' || value === 'markdown') return value;
+  if (value === 'pptx' || value === 'pdf' || value === 'markdown') return value;
   throw Object.assign(new Error('Unsupported export format'), { statusCode: 400 });
 }
 
