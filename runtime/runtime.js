@@ -79,40 +79,77 @@
   const viewport = document.querySelector('[data-viewport]');
 
   let manifest = { title: 'Deck', slides: [] };
-  try {
-    const response = await fetch('deck.json', { cache: 'no-store' });
-    if (response.ok) manifest = await response.json();
-  } catch {
-    /* fall through to empty deck */
-  }
-  if (manifest.title) document.title = manifest.title;
-  const transitionMode = ['slide', 'fade', 'none'].includes(manifest.transition) ? manifest.transition : 'slide';
-
-  const slidePaths = Array.isArray(manifest.slides) ? manifest.slides : [];
-  const fragments = await Promise.all(slidePaths.map(async (slidePath) => {
-    try {
-      const response = await fetch(slidePath, { cache: 'no-store' });
-      if (!response.ok) throw new Error(String(response.status));
-      return await response.text();
-    } catch {
-      return `<section class="slide slide-error"><h2>Missing slide</h2><p>${slidePath}</p></section>`;
-    }
-  }));
-
+  let transitionMode = 'slide';
+  let slides = [];
+  let total = 0;
+  let clickMeta = [];
   const parser = new DOMParser();
-  const slides = fragments.map((fragment, slideIndex) => {
-    const doc = parser.parseFromString(fragment, 'text/html');
-    let section = doc.body.querySelector('section.slide');
-    if (!section) {
-      section = doc.createElement('section');
-      section.className = 'slide';
-      while (doc.body.firstChild) section.appendChild(doc.body.firstChild);
+
+  function createClickMeta(slideNodes) {
+    return slideNodes.map((slide) => {
+      let auto = 0;
+      let max = 0;
+      const steps = new Map();
+      slide.querySelectorAll('[data-click]').forEach((target) => {
+        const raw = target.getAttribute('data-click');
+        const explicit = Number(raw);
+        const step = raw !== '' && Number.isInteger(explicit) && explicit > 0 ? explicit : ++auto;
+        auto = Math.max(auto, step);
+        max = Math.max(max, step);
+        steps.set(target, step);
+      });
+      return { steps, total: max };
+    });
+  }
+
+  async function loadDeck({ tolerateErrors = false } = {}) {
+    let nextManifest;
+    try {
+      const response = await fetch('deck.json', { cache: 'no-store' });
+      if (!response.ok) throw new Error(`deck.json: ${response.status}`);
+      nextManifest = await response.json();
+    } catch (error) {
+      if (!tolerateErrors) throw error;
+      nextManifest = { title: 'Deck', slides: [] };
     }
-    section.dataset.slideIndex = String(slideIndex);
-    stage.appendChild(document.importNode(section, true));
-    return stage.lastElementChild;
-  });
-  const total = slides.length;
+
+    const slidePaths = Array.isArray(nextManifest.slides) ? nextManifest.slides : [];
+    const fragments = await Promise.all(slidePaths.map(async (slidePath) => {
+      try {
+        const response = await fetch(slidePath, { cache: 'no-store' });
+        if (!response.ok) throw new Error(`${slidePath}: ${response.status}`);
+        return await response.text();
+      } catch (error) {
+        if (!tolerateErrors) throw error;
+        return `<section class="slide slide-error"><h2>Missing slide</h2><p>${slidePath}</p></section>`;
+      }
+    }));
+
+    const nextSlides = fragments.map((fragment, slideIndex) => {
+      const doc = parser.parseFromString(fragment, 'text/html');
+      let section = doc.body.querySelector('section.slide');
+      if (!section) {
+        section = doc.createElement('section');
+        section.className = 'slide';
+        while (doc.body.firstChild) section.appendChild(doc.body.firstChild);
+      }
+      section.dataset.slideIndex = String(slideIndex);
+      return document.importNode(section, true);
+    });
+
+    slides.forEach((slide) => slide.remove());
+    const deckNodes = document.createDocumentFragment();
+    nextSlides.forEach((slide) => deckNodes.appendChild(slide));
+    stage.insertBefore(deckNodes, stage.querySelector('.deck-drawing-svg, .deck-laser'));
+    manifest = nextManifest;
+    transitionMode = ['slide', 'fade', 'none'].includes(manifest.transition) ? manifest.transition : 'slide';
+    slides = nextSlides;
+    total = slides.length;
+    clickMeta = createClickMeta(slides);
+    if (manifest.title) document.title = manifest.title;
+  }
+
+  await loadDeck({ tolerateErrors: true });
 
   function slideTitle(slideIndex) {
     const slide = slides[slideIndex];
@@ -125,21 +162,6 @@
   // Elements marked data-click reveal progressively (Slidev v-click semantics).
   // data-click="3" pins an explicit step; bare data-click auto-increments in
   // DOM order. clicksTotal(slide) = highest step on the slide.
-  const clickMeta = slides.map((slide) => {
-    let auto = 0;
-    let max = 0;
-    const steps = new Map();
-    slide.querySelectorAll('[data-click]').forEach((target) => {
-      const raw = target.getAttribute('data-click');
-      const explicit = Number(raw);
-      const step = raw !== '' && Number.isInteger(explicit) && explicit > 0 ? explicit : ++auto;
-      auto = Math.max(auto, step);
-      max = Math.max(max, step);
-      steps.set(target, step);
-    });
-    return { steps, total: max };
-  });
-
   const clicksTotal = (index) => (clickMeta[index] ? clickMeta[index].total : 0);
 
   function applyClicks(slideIndex, click, root) {
@@ -936,7 +958,11 @@
   const progressFill = document.querySelector('[data-progress-fill]');
 
   function updateProgress() {
-    if (!progressFill || total < 2) return;
+    if (!progressFill) return;
+    if (total < 2) {
+      progressFill.style.width = '0%';
+      return;
+    }
     const clickShare = clicksTotal(nav.no - 1) ? nav.click / (clicksTotal(nav.no - 1) + 1) : 0;
     const ratio = (nav.no - 1 + clickShare) / (total - 1);
     progressFill.style.width = `${Math.min(ratio, 1) * 100}%`;
@@ -1250,10 +1276,87 @@
     go: (slideNumber) => go(slideNumber, CLICKS_MAX, { instant: true, force: true }),
   };
 
+  function themeStylesheet() {
+    return Array.from(document.querySelectorAll('link[rel="stylesheet"]'))
+      .find((link) => new URL(link.href, location.href).pathname.endsWith('/theme.css'));
+  }
+
+  function swapThemeStylesheet() {
+    return new Promise((resolve, reject) => {
+      const current = themeStylesheet();
+      if (!current) {
+        reject(new Error('Theme stylesheet was not found'));
+        return;
+      }
+      const replacement = current.cloneNode(false);
+      replacement.href = `theme.css?v=${Date.now()}`;
+      replacement.addEventListener('load', () => {
+        current.remove();
+        resolve();
+      }, { once: true });
+      replacement.addEventListener('error', () => {
+        replacement.remove();
+        reject(new Error('Theme stylesheet failed to reload'));
+      }, { once: true });
+      current.after(replacement);
+    });
+  }
+
+  async function softResync(paths, { refreshTheme = false } = {}) {
+    const previous = { ...nav };
+    finishTransition();
+    await loadDeck();
+    if (refreshTheme || paths.has('theme.css')) await swapThemeStylesheet();
+
+    nav.no = Math.min(Math.max(previous.no, 1), Math.max(total, 1));
+    nav.click = total ? clampClick(nav.no, previous.click) : 0;
+    if (!overview.hidden) {
+      overview.hidden = true;
+      overview.classList.remove('opening', 'closing');
+    }
+    window.__deck.count = total;
+    if (total) render(previous, { instant: true });
+    else {
+      updateNavBar();
+      updateProgress();
+      renderPresenterExtras();
+    }
+    fitStage();
+  }
+
   if (deckId && 'EventSource' in window) {
     const events = new EventSource(`/api/decks/${encodeURIComponent(deckId)}/runtime/events`);
-    events.addEventListener('deck_changed', () => {
-      location.reload();
+    const pendingPaths = new Set();
+    let pendingFull = false;
+    let reloadTimer = 0;
+    events.addEventListener('deck_changed', (event) => {
+      try {
+        const payload = JSON.parse(event.data);
+        if (!Array.isArray(payload.paths) || !payload.paths.length) pendingFull = true;
+        else payload.paths.forEach((value) => {
+          if (typeof value === 'string') pendingPaths.add(value.replace(/^\/+/, ''));
+        });
+      } catch {
+        pendingFull = true;
+      }
+      clearTimeout(reloadTimer);
+      reloadTimer = setTimeout(async () => {
+        const paths = new Set(pendingPaths);
+        const full = pendingFull;
+        pendingPaths.clear();
+        pendingFull = false;
+        try {
+          if (!full && paths.size > 0 && Array.from(paths).every((value) => value.endsWith('.css'))) {
+            await swapThemeStylesheet();
+          } else {
+            // A no-paths event means "something changed"; refresh the theme
+            // too since the server could not say whether it was touched.
+            await softResync(paths, { refreshTheme: full });
+          }
+        } catch {
+          location.reload();
+        }
+      }, 200);
     });
   }
 })();

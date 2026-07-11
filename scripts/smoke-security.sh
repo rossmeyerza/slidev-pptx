@@ -51,20 +51,23 @@ assertAgentInstructionAllowed(admin, 'Edit theme/layouts/default.vue and update 
 const memberPerms = permissionsForRole('member');
 const adminPerms = permissionsForRole('admin');
 const workspaceMemberPerms = permissionsForRole('member', 'workspace');
+const workspaceAdminPerms = permissionsForRole('admin', 'workspace');
 const memberText = JSON.stringify(memberPerms);
 const adminText = JSON.stringify(adminPerms);
 const workspaceMemberText = JSON.stringify(workspaceMemberPerms);
+const workspaceAdminText = JSON.stringify(workspaceAdminPerms);
 for (const required of ['/theme/**', '/package.json', '/setup/**', '/**/*.vue']) {
   if (!memberText.includes(required)) throw new Error(`member permissions missing ${required}`);
 }
 if (!memberText.includes('"mode":"deny"')) throw new Error('member permissions do not include deny rules');
 if (!memberText.includes('/slides.md')) throw new Error('member permissions do not allow slides.md writes');
-for (const allowed of ['/index.html', '/style.css', '/deck.js', '/assets/**', '/public/**']) {
+for (const allowed of ['/deck.json', '/theme.css', '/slides/**', '/assets/**', '/public/**']) {
   if (!workspaceMemberText.includes(allowed)) throw new Error(`workspace member permissions missing ${allowed}`);
 }
-for (const denied of ['/slides.md', '/package.json', '/node_modules/**', '/dist/**']) {
+for (const denied of ['/index.html', '/runtime.js', '/runtime.css', '/slides.md', '/package.json', '/meta.json', '/node_modules/**', '/dist/**']) {
   if (!workspaceMemberText.includes(denied)) throw new Error(`workspace member deny permissions missing ${denied}`);
 }
+if (workspaceAdminText !== workspaceMemberText) throw new Error('workspace admin and member permissions should be identical');
 if (!adminText.includes('/**') || !adminText.includes('"mode":"allow"')) {
   throw new Error('admin permissions should allow deck-root writes');
 }

@@ -298,6 +298,9 @@ export function createApiRouter(
       sendSse(res, 'status', { status: 'running' });
       const deck = await recordInstruction(config, decks, chat, agentRuns, req.params.id, asObject(req.body), context.user, (event, data) => {
         sendSse(res, event, data);
+        if (event === 'file_activity' && data && typeof data === 'object' && typeof (data as { path?: unknown }).path === 'string') {
+          runtimeEvents.emit(req.params.id, [(data as { path: string }).path.replace(/^\/+/, '')]);
+        }
       });
       runtimeEvents.emit(deck.meta.id);
       scheduleDraftBuildIfNeeded(slidev, deck);
@@ -1338,11 +1341,11 @@ class RuntimeEventHub {
     });
   }
 
-  emit(deckId: string): void {
+  emit(deckId: string, paths?: string[]): void {
     const clients = this.clients.get(deckId);
     if (!clients?.size) return;
     for (const client of clients) {
-      sendSse(client, 'deck_changed', { deckId, changedAt: new Date().toISOString() });
+      sendSse(client, 'deck_changed', { deckId, changedAt: new Date().toISOString(), ...(paths ? { paths } : {}) });
     }
   }
 }
@@ -1503,4 +1506,3 @@ function isAllowedRuntimeAsset(requestPath: string): boolean {
   if (['meta.json', 'slides.md', 'package.json', 'package-lock.json'].includes(path.posix.basename(normalized))) return false;
   return true;
 }
-

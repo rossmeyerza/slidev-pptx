@@ -108,8 +108,10 @@ The runtime shell reimplements Slidev's presentation UI in vanilla JS:
   timer; navigation and laser sync across windows via BroadcastChannel.
 - **Drawing**: pen/line/arrow/ellipse/rect, 7 colors, adjustable width,
   eraser, undo/redo/clear; annotations are per-slide and session-only.
-- The preview auto-reloads when deck files change (SSE on
-  `/api/decks/:id/runtime/events`).
+- The preview uses granular hot reload over SSE
+  (`/api/decks/:id/runtime/events`): CSS edits restyle without a page reload,
+  while slide and manifest edits patch the deck in place and preserve the
+  current position. Resync errors fall back to a full page reload.
 - Export tooling drives `window.__deck` (`count`, `current()`, `go(n)`) to
   screenshot each slide; `go(n)` lands with all clicks revealed and
   transitions disabled.

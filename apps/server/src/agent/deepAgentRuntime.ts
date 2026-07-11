@@ -84,6 +84,13 @@ export async function runDeepAgentDeckEdit(
 async function deepAgentState(instruction: string, deck: DeckRecord, deckRoot: string) {
   if (isWorkspaceDeck(deck)) {
     const files = await readWorkspacePromptFiles(deckRoot);
+    const slideSections = files.slides.flatMap((slide) => [
+      '',
+      `Current ${slide.path}:`,
+      '```html',
+      slide.content,
+      '```',
+    ]);
     return {
       messages: [
         {
@@ -92,29 +99,21 @@ async function deepAgentState(instruction: string, deck: DeckRecord, deckRoot: s
             'Instruction:',
             instruction,
             '',
-            'This is a custom HTML deck, not a Slidev deck.',
-            'Edit the real workspace files using filesystem tools. Do not edit /slides.md for this deck.',
-            'Primary files:',
-            '- /index.html',
-            '- /style.css',
-            '- /deck.js',
-            'You may also create or update files under /assets/** or /public/** if needed.',
-            'After writing files, return structured output with summary and changedFiles. Do not include full file contents in the final response.',
-            '',
-            'Current /index.html:',
-            '```html',
-            files.indexHtml,
+            'Current /deck.json:',
+            '```json',
+            files.deckJson,
             '```',
             '',
-            'Current /style.css:',
+            'Current /theme.css:',
             '```css',
-            files.styleCss,
+            files.themeCss,
             '```',
+            ...slideSections,
             '',
-            'Current /deck.js:',
-            '```js',
-            files.deckJs,
-            '```',
+            'Assets available:',
+            ...(files.assets.length ? files.assets.map((asset) => `- ${asset}`) : ['- (none)']),
+            '',
+            'After writing files, return structured output with summary and changedFiles. Do not include full file contents in the final response.',
           ].join('\n'),
         },
       ],
@@ -251,23 +250,31 @@ function filePathsFromValue(value: unknown): Set<string> {
 function deepAgentPrompt(roleScope: 'admin' | 'member', deck: DeckRecord): string {
   if (isWorkspaceDeck(deck)) {
     const shared = [
-      'You edit a file-based custom HTML deck using filesystem tools.',
+      'You edit a static HTML slide deck using filesystem tools.',
       'Use virtual filesystem paths rooted at the deck directory.',
-      'The deck runtime reads /index.html, /style.css, and /deck.js directly. Those files are the source of truth.',
+      '- Editable deck files are /deck.json (manifest), /slides/*.html (one section fragment per slide), /theme.css, and files under /assets/.',
+      '- NEVER touch /index.html, /runtime.js, /runtime.css (the runtime shell), /slides.md, /package.json, or /meta.json.',
+      '- Slides render on a fixed 1280x720 px stage. Design in px, never vw/vh, and ensure content neither overflows nor scrolls.',
+      '- Each slide file must contain exactly one <section class="slide ..." data-title="..."> fragment: no html/head/body wrappers, <script>, or external CDN/font/asset URLs. Decks are self-contained.',
+      '- Slide order lives in the slides array of /deck.json. Keep NN-slug.html filenames and the manifest synchronized when adding, removing, or reordering slides.',
+      '- data-click progressively reveals an element: bare values auto-increment, while data-click="3" pins step 3. <aside class="notes"> contains presenter notes and never renders on the slide.',
+      '- /deck.json transition must be "slide", "fade", or "none".',
+      '- Put shared visual decisions in /theme.css: tokens on :root, layouts such as layout-cover/layout-split/layout-statement/layout-grid, and components such as data-card/stat/eyebrow/lead. Prefer theme classes to inline styles; self-host fonts under /assets/fonts with @font-face.',
+      '- You cannot delete files. To remove or rename a slide, update the slides array in /deck.json; previously existing slide files no longer referenced by the manifest are pruned automatically after your run. Prefer inserting new slides without renumbering existing files unless the user asks for a reorder.',
+      '- CRITICAL: any slide file you create is invisible until /deck.json lists it. Whenever you add, remove, or rename a slide file, update /deck.json in the same run and verify the write succeeded (re-read it if unsure). If an edit_file call fails, rewrite the whole file with write_file.',
       'Use read_file, write_file, edit_file, ls, glob, and grep to inspect and modify files.',
-      'Do not edit /slides.md for custom HTML decks.',
       'Return structured output with summary and changedFiles.',
       `Deck id: ${deck.meta.id}`,
     ];
     if (roleScope === 'admin') {
       return [
         ...shared,
-        'Admin scope: you may edit HTML, CSS, JS, and deck-local assets. Keep the deck self-contained and do not depend on external build tools.',
+        'Admin scope: you may restructure the theme and slide set freely within the rules above.',
       ].join('\n');
     }
     return [
       ...shared,
-      'Member scope: content and presentation only. Do not edit package metadata, hidden files, or server/application code.',
+      'Member scope: content and presentation edits only; do not add new asset files other than under /assets/.',
     ].join('\n');
   }
 
@@ -292,20 +299,9 @@ function deepAgentPrompt(roleScope: 'admin' | 'member', deck: DeckRecord): strin
 
 export function permissionsForRole(roleScope: 'admin' | 'member', kind: 'slidev' | 'workspace' = 'slidev'): FilesystemPermission[] {
   if (kind === 'workspace') {
-    const commonDeny: FilesystemPermission[] = [
-      { operations: ['write'], paths: ['/package.json', '/package-lock.json', '/setup/**', '/vite.config.*', '/node_modules/**', '/dist/**', '/meta.json', '/slides.md', '/.*', '/**/.*'], mode: 'deny' },
-    ];
-    if (roleScope === 'admin') {
-      return [
-        ...commonDeny,
-        { operations: ['write'], paths: ['/index.html', '/style.css', '/deck.js', '/assets/**', '/public/**'], mode: 'allow' },
-        { operations: ['write'], paths: ['/**'], mode: 'deny' },
-        { operations: ['read'], paths: ['/**'], mode: 'allow' },
-      ];
-    }
     return [
-      ...commonDeny,
-      { operations: ['write'], paths: ['/index.html', '/style.css', '/deck.js', '/assets/**', '/public/**'], mode: 'allow' },
+      { operations: ['write'], paths: ['/index.html', '/runtime.js', '/runtime.css', '/package.json', '/package-lock.json', '/meta.json', '/slides.md', '/setup/**', '/vite.config.*', '/node_modules/**', '/dist/**', '/.*', '/**/.*'], mode: 'deny' },
+      { operations: ['write'], paths: ['/deck.json', '/theme.css', '/slides/**', '/assets/**', '/public/**'], mode: 'allow' },
       { operations: ['write'], paths: ['/**'], mode: 'deny' },
       { operations: ['read'], paths: ['/**'], mode: 'allow' },
     ];
@@ -335,6 +331,7 @@ async function parseDeepAgentResult(
   const candidate = structured && typeof structured === 'object' ? structured as Record<string, unknown> : record;
 
   if (isWorkspaceDeck(deck)) {
+    await pruneOrphanSlides(deckRoot, beforeWorkspace);
     const detected = await changedWorkspaceFiles(deckRoot, beforeWorkspace);
     const reported = Array.isArray(candidate.changedFiles)
       ? candidate.changedFiles.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
@@ -362,16 +359,88 @@ function deckKind(deck: DeckRecord): 'slidev' | 'workspace' {
 }
 
 function isWorkspaceDeck(deck: DeckRecord): boolean {
-  return deck.meta.scaffoldKey === 'custom-html';
+  return Boolean(deck.meta.draftUrl?.startsWith('/runtime/')) || deck.meta.scaffoldKey === 'custom-html';
 }
 
-async function readWorkspacePromptFiles(deckRoot: string): Promise<{ indexHtml: string; styleCss: string; deckJs: string }> {
+/**
+ * The agent has no delete tool, so renames/removals leave stale slide files
+ * behind. deck.json is the source of truth: after a run, slide files the
+ * manifest no longer references are removed — but only files that already
+ * existed before the run. A slide the agent just wrote is never pruned, so a
+ * failed manifest update cannot destroy fresh work; it stays on disk as a
+ * visible orphan instead. Skipped entirely when the manifest is missing,
+ * corrupt, or empty so a bad agent write cannot wipe the slides directory.
+ */
+async function pruneOrphanSlides(deckRoot: string, beforeWorkspace: Map<string, string>): Promise<void> {
+  try {
+    const manifest = JSON.parse(await fs.readFile(path.join(deckRoot, 'deck.json'), 'utf8')) as { slides?: unknown };
+    if (!Array.isArray(manifest.slides) || !manifest.slides.length) return;
+    const referenced = new Set(manifest.slides
+      .filter((value): value is string => typeof value === 'string')
+      .map((value) => path.posix.normalize(value.replace(/^\/+/, ''))));
+    if (!referenced.size) return;
+    const entries = await fs.readdir(path.join(deckRoot, 'slides'), { withFileTypes: true }).catch(() => []);
+    for (const entry of entries) {
+      if (!entry.isFile() || !entry.name.endsWith('.html')) continue;
+      if (referenced.has(`slides/${entry.name}`)) continue;
+      if (!beforeWorkspace.has(`/slides/${entry.name}`)) continue;
+      await fs.unlink(path.join(deckRoot, 'slides', entry.name)).catch(() => undefined);
+    }
+  } catch {
+    // Never let cleanup break a successful agent run.
+  }
+}
+
+interface WorkspacePromptFiles {
+  deckJson: string;
+  themeCss: string;
+  slides: Array<{ path: string; content: string }>;
+  assets: string[];
+}
+
+async function readWorkspacePromptFiles(deckRoot: string): Promise<WorkspacePromptFiles> {
   const read = async (relative: string) => fs.readFile(path.join(deckRoot, relative), 'utf8').catch(() => '');
+  const deckJson = await read('deck.json');
+  let slideFiles: string[] = [];
+  let hasManifestSlideList = false;
+  try {
+    const manifest = JSON.parse(deckJson) as { slides?: unknown };
+    if (Array.isArray(manifest.slides)) {
+      hasManifestSlideList = true;
+      slideFiles = manifest.slides
+        .filter((value): value is string => typeof value === 'string')
+        .map((value) => path.posix.normalize(value.replace(/^\/+/, '')))
+        .filter((value) => value.startsWith('slides/') && value.endsWith('.html') && !value.includes('/../'));
+    }
+  } catch {
+    // Missing or corrupt manifests fall back to the slide directory below.
+  }
+  if (!hasManifestSlideList) {
+    const entries = await fs.readdir(path.join(deckRoot, 'slides'), { withFileTypes: true }).catch(() => []);
+    slideFiles = entries
+      .filter((entry) => entry.isFile() && entry.name.endsWith('.html'))
+      .map((entry) => `slides/${entry.name}`)
+      .sort((left, right) => left.localeCompare(right));
+  }
+
+  const assets: string[] = [];
+  await collectAssetNames(path.join(deckRoot, 'assets'), 'assets', assets);
   return {
-    indexHtml: await read('index.html'),
-    styleCss: await read('style.css'),
-    deckJs: await read('deck.js'),
+    deckJson,
+    themeCss: await read('theme.css'),
+    slides: await Promise.all(slideFiles.map(async (file) => ({ path: `/${file}`, content: await read(file) }))),
+    assets: assets.sort((left, right) => left.localeCompare(right)).map((asset) => `/${asset}`),
   };
+}
+
+async function collectAssetNames(absoluteDir: string, relativeDir: string, results: string[]): Promise<void> {
+  const entries = await fs.readdir(absoluteDir, { withFileTypes: true }).catch(() => []);
+  for (const entry of entries) {
+    if (entry.name.startsWith('.')) continue;
+    const relative = path.posix.join(relativeDir, entry.name);
+    if (entry.isDirectory()) await collectAssetNames(path.join(absoluteDir, entry.name), relative, results);
+    else if (entry.isFile()) results.push(relative);
+  }
 }
 
 async function snapshotWorkspace(deckRoot: string): Promise<Map<string, string>> {
@@ -422,6 +491,6 @@ function normalizeVirtualPath(value: string): string {
 
 function isWorkspaceEditablePath(value: string): boolean {
   const normalized = normalizeVirtualPath(value);
-  if (normalized === '/index.html' || normalized === '/style.css' || normalized === '/deck.js') return true;
-  return normalized.startsWith('/assets/') || normalized.startsWith('/public/');
+  if (normalized === '/deck.json' || normalized === '/theme.css') return true;
+  return normalized.startsWith('/slides/') || normalized.startsWith('/assets/') || normalized.startsWith('/public/');
 }
