@@ -16,7 +16,7 @@ import { BETTER_AUTH_BASE_PATH, createBetterAuth } from './auth/betterAuth.js';
 import { SettingsService } from './decks/settings.js';
 
 /**
- * Starts the Slidev Agent Platform v1 HTTP server.
+ * Starts the Deckhand v1 HTTP server.
  */
 async function main(): Promise<void> {
   dotenv.config({ path: '.env' });
@@ -112,7 +112,7 @@ async function main(): Promise<void> {
   });
   server.listen(config.port, config.host, () => {
     const address = `http://${config.host}:${config.port}`;
-    logger.info({ address, staticDir: config.staticDir, dataDir: config.dataDir }, 'Slidev Agent server listening');
+    logger.info({ address, staticDir: config.staticDir, dataDir: config.dataDir }, 'Deckhand server listening');
   });
 
   let shuttingDown = false;

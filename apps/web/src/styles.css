@@ -1,5 +1,5 @@
 /* ---------------------------------------------------------------------------
-   Slidev Agent — app skin.
+   Deckhand — app skin.
    Halfmoon/Bootstrap stays the component engine; this layer only retunes its
    CSS variables plus the approved app-specific layout (shell, workbench panes,
    chat stream, preview frames, dashboard grid).

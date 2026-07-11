@@ -46,6 +46,8 @@ import {
   createAdminLayout,
   createDeck,
   createShare,
+  deleteDeck,
+  duplicateDeck,
   exportDeck,
   getDeck,
   getDeckAgentSettings,
@@ -59,6 +61,10 @@ import {
   inviteUser,
   listCollaborators,
   listDecks,
+  listDeckFiles,
+  getDeckFile,
+  saveDeckFile,
+  listShareVisitors,
   listAgentModels,
   listScaffolds,
   listUsers,
@@ -72,12 +78,14 @@ import {
   removeCollaborator,
   revokeShare,
   saveCollaborator,
+  saveDeckAsTemplate,
   sendShareInstruction,
   sendInstructionStream,
   startLivePreview,
   submitSharePassword,
   updateAdminSettings,
   updateDeckAgentSettings,
+  updateDeck,
   updateUser,
   uploadDeckAsset,
 } from './api.js';
@@ -149,7 +157,7 @@ export function App() {
     user ? showToast(text, result.sent ? 'success' : 'warning', label) : setAuthNotice(text);
   };
 
-  const showToast = (message, tone = 'info', title = 'Slidev Agent') => {
+  const showToast = (message, tone = 'info', title = 'Deckhand') => {
     setToast({ id: Date.now(), message, tone, title });
   };
 
@@ -210,8 +218,8 @@ export function App() {
           <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path fillRule="evenodd" d="M2.5 12a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5m0-4a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5m0-4a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5" /></svg>
         </button>
         <a className="app-brand" href="#" onClick={(event) => { event.preventDefault(); setView('dashboard'); }}>
-          <span className="brand-mark" aria-hidden="true">S</span>
-          Slidev Agent
+          <span className="brand-mark" aria-hidden="true">D</span>
+          Deckhand
         </a>
         <span className="topbar-context">{topbarContext(view, selectedDeck)}</span>
         <button type="button" className="btn btn-sm btn-ghost-inverse ms-auto d-inline-flex align-items-center" onClick={toggleTheme} aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'} title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}>
@@ -268,6 +276,27 @@ export function App() {
                 showToast(error instanceof Error ? error.message : 'Deck is locked by another editor.', 'warning', 'Deck lock');
               }
             }}
+            onRename={async (title) => {
+              if (!selectedDeck) return;
+              refreshDeck(await updateDeck(selectedDeck.id, { title }));
+              await queryClient.invalidateQueries({ queryKey: queryKeys.deck(selectedDeck.id) });
+              await queryClient.invalidateQueries({ queryKey: queryKeys.decks });
+            }}
+            onDuplicate={async () => {
+              if (!selectedDeck) return;
+              const copy = await duplicateDeck(selectedDeck.id);
+              refreshDeck(copy);
+              setSelectedDeckId(copy.id);
+              setView('detail');
+            }}
+            onDelete={async () => {
+              if (!selectedDeck) return;
+              await deleteDeck(selectedDeck.id);
+              setSelectedDeckId('');
+              setView('dashboard');
+              queryClient.removeQueries({ queryKey: queryKeys.deck(selectedDeck.id) });
+              await queryClient.invalidateQueries({ queryKey: queryKeys.decks });
+            }}
             onPublish={async () => selectedDeck && refreshDeck(await publishDeck(selectedDeck.id))}
             onExport={async (format = 'pptx') => {
               if (!selectedDeck) return;
@@ -310,11 +339,13 @@ export function App() {
                 layout: () => createAdminLayout(selectedDeck.id, input),
                 dependency: () => addAdminDependency(selectedDeck.id, input),
                 restartPreview: () => restartDeckPreview(selectedDeck.id),
+                template: () => saveDeckAsTemplate(selectedDeck.id, input),
               };
               const result = await actions[action]?.();
               await queryClient.invalidateQueries({ queryKey: queryKeys.livePreview(selectedDeck.id) });
               await queryClient.invalidateQueries({ queryKey: queryKeys.previewBuild(selectedDeck.id) });
               await queryClient.invalidateQueries({ queryKey: queryKeys.deck(selectedDeck.id) });
+              await queryClient.invalidateQueries({ queryKey: queryKeys.scaffolds });
               return result;
             }}
             onLoadDeckAgentSettings={() => selectedDeck ? getDeckAgentSettings(selectedDeck.id) : null}
@@ -337,9 +368,9 @@ export function App() {
               }
               setView('detail');
             }}
-            onSend={async (instruction, onEvent) => {
+            onSend={async (instruction, onEvent, targetSlide) => {
               if (!selectedDeck) return;
-              refreshDeck(await sendInstructionStream(selectedDeck.id, instruction, onEvent));
+              refreshDeck(await sendInstructionStream(selectedDeck.id, instruction, onEvent, targetSlide));
               await queryClient.invalidateQueries({ queryKey: queryKeys.previewBuild(selectedDeck.id) });
             }}
             onRevert={async () => {
@@ -390,8 +421,8 @@ function AuthScreen({ loading = false, hasUsers = true, notice = '', onLogin, on
       <div className="card auth-card auth-card-split overflow-hidden shadow">
         <div className="row g-0">
         <div className="col-12 col-md-6 auth-intro">
-          <span className="brand-mark mb-3" style={{ width: '2rem', height: '2rem', fontSize: '1rem' }} aria-hidden="true">S</span>
-          <h1 className="h4 mb-1">Slidev Agent</h1>
+          <span className="brand-mark mb-3" style={{ width: '2rem', height: '2rem', fontSize: '1rem' }} aria-hidden="true">D</span>
+          <h1 className="h4 mb-1">Deckhand</h1>
           <p className="mb-0 small auth-intro-lead">Describe the deck. The agent builds it.</p>
           <ul className="auth-intro-points">
             <li>
@@ -680,8 +711,8 @@ function Sidebar({ user, decks, selectedDeckId, activeView, onSelectDeck, onView
     <nav className="workspace-sidebar offcanvas offcanvas-start" tabIndex="-1" id="workspace-sidebar" aria-label="Workspace navigation">
       <div className="offcanvas-header border-bottom">
         <a className="sidebar-brand" href="#" onClick={(event) => { event.preventDefault(); onView('dashboard'); }}>
-          <span className="brand-mark" aria-hidden="true">S</span>
-          Slidev Agent
+          <span className="brand-mark" aria-hidden="true">D</span>
+          Deckhand
         </a>
         <button type="button" className="btn-close" data-bs-dismiss="offcanvas" aria-label="Close" data-bs-target="#workspace-sidebar"></button>
       </div>
@@ -990,14 +1021,18 @@ function DashboardSummary({ user, decks, scaffolds }) {
   );
 }
 
-function DeckDetail({ deck, currentUser, loading, exportJob, onWork, onPublish, onExport, onShare, onRevokeShare, collaborators = [], collaboratorsLoading = false, onSaveCollaborator, onRemoveCollaborator, onAdminTool, onLoadDeckAgentSettings, onSaveDeckAgentSettings }) {
+function DeckDetail({ deck, currentUser, loading, exportJob, onWork, onRename, onDuplicate, onDelete, onPublish, onExport, onShare, onRevokeShare, collaborators = [], collaboratorsLoading = false, onSaveCollaborator, onRemoveCollaborator, onAdminTool, onLoadDeckAgentSettings, onSaveDeckAgentSettings }) {
   const [shareName, setShareName] = useState('');
   const [shareEmail, setShareEmail] = useState('');
   const [sharePermission, setSharePermission] = useState('view');
   const [sharePassword, setSharePassword] = useState('');
+  const [shareExpiry, setShareExpiry] = useState('');
   const [collaboratorEmail, setCollaboratorEmail] = useState('');
   const [collaboratorRole, setCollaboratorRole] = useState('viewer');
   const [exporting, setExporting] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [titleValue, setTitleValue] = useState(deck?.title ?? '');
+  useEffect(() => { if (!renaming) setTitleValue(deck?.title ?? ''); }, [deck?.title, renaming]);
   const previewBuildQuery = useQuery({
     queryKey: queryKeys.previewBuild(deck?.id ?? ''),
     queryFn: () => getPreviewBuild(deck.id),
@@ -1023,11 +1058,29 @@ function DeckDetail({ deck, currentUser, loading, exportJob, onWork, onPublish, 
             <span className={`status-dot ${deckStatusDot(deck)}`} aria-hidden="true"></span>
             {deck.status} · Updated {formatDate(deck.updatedAt)}
           </p>
-          <h2 className="h3 mb-1">{deck.title}</h2>
+          {renaming ? (
+            <form className="d-flex flex-wrap align-items-center gap-2 mb-1" onSubmit={async (event) => {
+              event.preventDefault();
+              const title = titleValue.trim();
+              if (!title) return;
+              await onRename?.(title);
+              setRenaming(false);
+            }}>
+              <input className="form-control" value={titleValue} onChange={(event) => setTitleValue(event.target.value)} aria-label="Deck title" autoFocus />
+              <button className="btn btn-primary btn-sm" type="submit">Save</button>
+              <button className="btn btn-outline-secondary btn-sm" type="button" onClick={() => { setTitleValue(deck.title); setRenaming(false); }}>Cancel</button>
+            </form>
+          ) : (
+            <div className="d-flex align-items-center gap-2 mb-1">
+              <h2 className="h3 mb-0">{deck.title}</h2>
+              <button className="btn btn-outline-secondary btn-sm d-inline-flex align-items-center" type="button" onClick={() => setRenaming(true)} aria-label="Rename deck" title="Rename deck"><Icon name="edit" size={15} /></button>
+            </div>
+          )}
           <p className="text-body-secondary small mb-0">{deck.owner} · <span className="text-mono">{deck.id}</span></p>
         </div>
         <div className="btn-toolbar gap-2" role="toolbar" aria-label="Deck actions">
           <button className="btn btn-primary" type="button" onClick={onWork}>Work on this</button>
+          <button className="btn btn-outline-secondary" type="button" onClick={onDuplicate}>Duplicate</button>
           <a className="btn btn-outline-secondary" href={deck.previewUrl || '#'} target="_blank" rel="noreferrer">Open preview</a>
           <button className="btn btn-outline-secondary" type="button" onClick={onPublish}>Publish</button>
           <button
@@ -1097,11 +1150,13 @@ function DeckDetail({ deck, currentUser, loading, exportJob, onWork, onPublish, 
                     email: shareEmail,
                     permission: sharePermission,
                     password: sharePassword,
+                    ...(shareExpiry ? { expiresInDays: Number(shareExpiry) } : {}),
                   });
                   setShareName('');
                   setShareEmail('');
                   setSharePermission('view');
                   setSharePassword('');
+                  setShareExpiry('');
                 }}
               >
                 <input className="form-control" value={shareName} onChange={(event) => setShareName(event.target.value)} placeholder="Client name" required />
@@ -1111,6 +1166,11 @@ function DeckDetail({ deck, currentUser, loading, exportJob, onWork, onPublish, 
                   <option value="edit">Can request edits</option>
                 </select>
                 <input className="form-control" value={sharePassword} onChange={(event) => setSharePassword(event.target.value)} type="password" placeholder="Optional password" />
+                <select className="form-select" value={shareExpiry} onChange={(event) => setShareExpiry(event.target.value)} aria-label="Share expiry">
+                  <option value="">Never expires</option>
+                  <option value="7">Expires in 7 days</option>
+                  <option value="30">Expires in 30 days</option>
+                </select>
                 <button className="btn btn-outline-secondary" type="submit">Create link</button>
               </form>
             </div>
@@ -1125,7 +1185,9 @@ function DeckDetail({ deck, currentUser, loading, exportJob, onWork, onPublish, 
                     <button className="btn btn-outline-danger btn-sm" type="button" onClick={() => onRevokeShare?.(share.id)}>Revoke</button>
                   </div>
                   <span className="d-block small text-body-secondary">{share.permission === 'edit' ? 'Can request edits' : 'View only'}{share.hasPassword ? ' · Password protected' : ''}</span>
+                  <span className="d-block small text-body-secondary">Viewed {share.viewCount ?? 0}x{share.lastViewedAt ? ` · last ${formatDate(share.lastViewedAt)}` : ''}{share.expiresAt ? ` · expires ${formatDate(share.expiresAt)}` : ''}</span>
                   <a className="d-block small" href={share.url} target="_blank" rel="noreferrer">{share.url}</a>
+                  <ShareVisitors deckId={deck.id} shareId={share.id} />
                 </li>
               )) : <li className="list-group-item text-body-secondary small">No client links yet.</li>}
             </ul>
@@ -1209,7 +1271,37 @@ function DeckDetail({ deck, currentUser, loading, exportJob, onWork, onPublish, 
           {currentUser?.role === 'admin' ? <DeckAdminTools deck={deck} onAdminTool={onAdminTool} onLoadAgentSettings={onLoadDeckAgentSettings} onSaveAgentSettings={onSaveDeckAgentSettings} /> : null}
         </section>
       </div>
+      <section className="card border-danger mt-4">
+        <div className="card-body d-flex flex-wrap align-items-center justify-content-between gap-3">
+          <div><h3 className="h6 mb-1">Danger zone</h3><p className="text-body-secondary small mb-0">Permanently delete this deck and its local files.</p></div>
+          <button className="btn btn-outline-danger" type="button" onClick={() => { if (window.confirm(`Delete “${deck.title}”? This cannot be undone.`)) onDelete?.(); }}>Delete deck</button>
+        </div>
+      </section>
     </section>
+  );
+}
+
+function ShareVisitors({ deckId, shareId }) {
+  const [expanded, setExpanded] = useState(false);
+  const [visitors, setVisitors] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const toggle = async () => {
+    const next = !expanded;
+    setExpanded(next);
+    if (next && !visitors.length) {
+      setLoading(true);
+      try { setVisitors(await listShareVisitors(deckId, shareId)); } finally { setLoading(false); }
+    }
+  };
+  return (
+    <div className="mt-2">
+      <button className="btn btn-link btn-sm p-0" type="button" onClick={toggle}>{expanded ? 'Hide visitors' : 'Visitors'}</button>
+      {expanded ? <ul className="list-unstyled small mt-2 mb-0">
+        {loading ? <li className="text-body-secondary">Loading...</li> : null}
+        {!loading && !visitors.length ? <li className="text-body-secondary">No identified visitors yet.</li> : null}
+        {visitors.map((visitor) => <li key={visitor.id}>{visitor.name} · {visitor.email} · {formatDate(visitor.createdAt)}</li>)}
+      </ul> : null}
+    </div>
   );
 }
 
@@ -1225,6 +1317,8 @@ function DeckAdminTools({ deck, onAdminTool, onLoadAgentSettings, onSaveAgentSet
   const [agentMemberModel, setAgentMemberModel] = useState('');
   const [agentAdminModel, setAgentAdminModel] = useState('');
   const [agentTimeoutMs, setAgentTimeoutMs] = useState('');
+  const [templateName, setTemplateName] = useState('');
+  const [templateDescription, setTemplateDescription] = useState('');
 
   React.useEffect(() => {
     let ignore = false;
@@ -1259,6 +1353,17 @@ function DeckAdminTools({ deck, onAdminTool, onLoadAgentSettings, onSaveAgentSet
       </div>
       <div className="card-body">
         {status ? <section className="alert alert-info py-2" role="status">{status}</section> : null}
+        <form className="d-grid gap-2 mb-3" onSubmit={async (event) => {
+          event.preventDefault();
+          await run('template', { name: templateName, description: templateDescription }, 'Template saved and is ready for new decks.');
+          setTemplateName('');
+          setTemplateDescription('');
+        }}>
+          <label className="form-label" htmlFor="adminTemplateName">Save as template</label>
+          <input className="form-control" id="adminTemplateName" value={templateName} onChange={(event) => setTemplateName(event.target.value)} placeholder="Client pitch" required />
+          <input className="form-control" value={templateDescription} onChange={(event) => setTemplateDescription(event.target.value)} placeholder="Optional description" />
+          <button className="btn btn-outline-secondary" disabled={busy === 'template'} type="submit">Save as template</button>
+        </form>
         <form
           className="d-grid gap-2 mb-3"
           onSubmit={async (event) => {
@@ -1348,7 +1453,31 @@ function Workbench({ deck, currentUser, onBack, onSend, onCancel, onRevert, onUp
   const [currentRunId, setCurrentRunId] = useState('');
   const [sending, setSending] = useState(false);
   const [previewReload, setPreviewReload] = useState(0);
+  const [targetCurrentSlide, setTargetCurrentSlide] = useState(false);
+  const [files, setFiles] = useState([]);
+  const [selectedFile, setSelectedFile] = useState('');
+  const [fileContent, setFileContent] = useState('');
+  const [filesBusy, setFilesBusy] = useState(false);
+  const [fileStatus, setFileStatus] = useState('');
   const assetInputRef = useRef(null);
+  const previewIframeRef = useRef(null);
+  const openFiles = async () => {
+    setFilesBusy(true);
+    setFileStatus('');
+    try {
+      const next = await listDeckFiles(deck.id);
+      setFiles(next);
+      if (next[0]) {
+        const result = await getDeckFile(deck.id, next[0].path);
+        setSelectedFile(result.path);
+        setFileContent(result.content);
+      }
+    } catch (error) {
+      setFileStatus(error instanceof Error ? error.message : 'Could not load deck files.');
+    } finally {
+      setFilesBusy(false);
+    }
+  };
   const livePreview = useQuery({
     queryKey: queryKeys.livePreview(deck?.id ?? ''),
     queryFn: () => startLivePreview(deck.id),
@@ -1386,11 +1515,12 @@ function Workbench({ deck, currentUser, onBack, onSend, onCancel, onRevert, onUp
               <span className={`badge ${previewStatusClass(previewStatus)}`}>{formatPreviewStatus(previewStatus)}</span>
             </div>
             <div className="btn-toolbar gap-2">
+              <button className="btn btn-outline-secondary btn-sm d-inline-flex align-items-center gap-1" type="button" data-bs-toggle="offcanvas" data-bs-target="#deck-files-drawer" onClick={openFiles}><Icon name="edit" size={15} />Files</button>
               <button className="btn btn-outline-secondary btn-sm" type="button" disabled={livePreview.isFetching} onClick={() => livePreview.refetch()}>Refresh preview</button>
               <button className="btn btn-outline-secondary btn-sm" type="button" onClick={() => setPreviewReload((value) => value + 1)}>Reload frame</button>
             </div>
           </div>
-          <PreviewFrame src={previewUrl} workbench reloadToken={previewReload} />
+          <PreviewFrame src={previewUrl} workbench reloadToken={previewReload} iframeRef={previewIframeRef} />
         </section>
         <section className="card shadow-sm workbench-chat" data-tour="workbench-chat">
           <div className="card-header d-flex align-items-center justify-content-between gap-2">
@@ -1448,6 +1578,13 @@ function Workbench({ deck, currentUser, onBack, onSend, onCancel, onRevert, onUp
                 setStreamText('');
                 setCurrentRunId('');
                 setInstruction('');
+                let targetSlide;
+                if (targetCurrentSlide) {
+                  try {
+                    const current = previewIframeRef.current?.contentWindow?.__deck?.current?.();
+                    if (Number.isInteger(current) && current > 0) targetSlide = current;
+                  } catch {}
+                }
                 try {
 	                  await onSend(value, (event) => {
 	                    if (event.event === 'run') setCurrentRunId(event.data?.run?.id ?? '');
@@ -1455,7 +1592,7 @@ function Workbench({ deck, currentUser, onBack, onSend, onCancel, onRevert, onUp
 	                    if (event.event === 'token') setStreamText((current) => `${current}${event.data?.token ?? ''}`.slice(-2000));
 	                    if (event.event === 'file_change') setStreamStatus('preview updating');
 	                    if (event.event === 'done') setStreamStatus('done');
-	                  });
+	                  }, targetSlide);
                 } catch (error) {
                   setInstruction(value);
                   setSendError(error instanceof Error ? error.message : 'Instruction failed.');
@@ -1469,6 +1606,10 @@ function Workbench({ deck, currentUser, onBack, onSend, onCancel, onRevert, onUp
             >
               <label className="form-label" htmlFor="instructionInput">Instruction</label>
 	              <textarea className="form-control" id="instructionInput" rows={6} value={instruction} onChange={(event) => setInstruction(event.target.value)} placeholder="Ask the agent to revise the deck." disabled={sending || lockedByOther} />
+	              <div className="form-check mt-2">
+	                <input className="form-check-input" id="targetCurrentSlide" type="checkbox" checked={targetCurrentSlide} onChange={(event) => setTargetCurrentSlide(event.target.checked)} disabled={sending || lockedByOther} />
+	                <label className="form-check-label" htmlFor="targetCurrentSlide">Target the slide I'm viewing</label>
+	              </div>
 	              {streamText ? <pre className="agent-stream-preview mt-3 mb-0">{streamText}</pre> : null}
 	              <div className="d-flex flex-wrap align-items-center justify-content-between gap-2 mt-3">
                 <span className="text-body-secondary small">{sending ? `Agent: ${formatStreamStatus(streamStatus)}` : 'Changes are applied to the selected deck thread.'}</span>
@@ -1506,11 +1647,41 @@ function Workbench({ deck, currentUser, onBack, onSend, onCancel, onRevert, onUp
           </div>
         </section>
       </div>
+      <aside className="offcanvas offcanvas-end" tabIndex="-1" id="deck-files-drawer" aria-labelledby="deck-files-title">
+        <div className="offcanvas-header border-bottom">
+          <h3 className="offcanvas-title h5" id="deck-files-title">Deck files</h3>
+          <button type="button" className="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+        </div>
+        <div className="offcanvas-body d-flex flex-column gap-3">
+          <p className="text-body-secondary small mb-0">Saving hot-reloads the preview.</p>
+          {fileStatus ? <section className="alert alert-info py-2 mb-0" role="status">{fileStatus}</section> : null}
+          <div className="d-flex flex-wrap gap-2">
+            {files.map((file) => <button key={file.path} className={`btn btn-sm ${selectedFile === file.path ? 'btn-primary' : 'btn-outline-secondary'}`} type="button" disabled={filesBusy} onClick={async () => {
+              setFilesBusy(true);
+              setFileStatus('');
+              try {
+                const result = await getDeckFile(deck.id, file.path);
+                setSelectedFile(result.path);
+                setFileContent(result.content);
+              } catch (error) { setFileStatus(error instanceof Error ? error.message : 'Could not load file.'); }
+              finally { setFilesBusy(false); }
+            }}>{file.path}</button>)}
+          </div>
+          <textarea className="form-control text-mono flex-grow-1" rows={20} value={fileContent} onChange={(event) => setFileContent(event.target.value)} disabled={!selectedFile || filesBusy} aria-label="File content" />
+          <button className="btn btn-primary" type="button" disabled={!selectedFile || filesBusy || lockedByOther} onClick={async () => {
+            setFilesBusy(true);
+            setFileStatus('');
+            try { await saveDeckFile(deck.id, selectedFile, fileContent); setFileStatus('Saved. Preview hot-reloaded.'); }
+            catch (error) { setFileStatus(error instanceof Error ? error.message : 'Could not save file.'); }
+            finally { setFilesBusy(false); }
+          }}>{filesBusy ? 'Saving...' : 'Save'}</button>
+        </div>
+      </aside>
     </section>
   );
 }
 
-function PreviewFrame({ src, workbench = false, reloadToken = 0 }) {
+function PreviewFrame({ src, workbench = false, reloadToken = 0, iframeRef }) {
   const [loaded, setLoaded] = useState(false);
   const href = src ? new URL(src, window.location.origin).href : 'about:blank';
   React.useEffect(() => {
@@ -1518,7 +1689,7 @@ function PreviewFrame({ src, workbench = false, reloadToken = 0 }) {
   }, [href, reloadToken]);
   return (
     <div className={`preview-frame-wrap${workbench ? ' workbench-preview' : ''}`}>
-      {src ? <iframe key={`${href}:${reloadToken}`} src={href} title="Slidev preview" onLoad={() => setLoaded(true)} /> : null}
+      {src ? <iframe ref={iframeRef} key={`${href}:${reloadToken}`} src={href} title="Deck preview" onLoad={() => setLoaded(true)} /> : null}
       {!src || !loaded ? (
         <div className="empty-preview">
           {src ? (

@@ -39,8 +39,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     agent: {
       baseUrl: nonEmpty(env.AGENT_BASE_URL) ?? 'http://127.0.0.1:3033/v1',
       apiKey: nonEmpty(env.AGENT_API_KEY),
-      memberModel: nonEmpty(env.MEMBER_AGENT_MODEL) ?? nonEmpty(env.AGENT_MODEL) ?? 'claude-sonnet-4.6',
-      adminModel: nonEmpty(env.ADMIN_AGENT_MODEL) ?? nonEmpty(env.AGENT_MODEL) ?? 'claude-opus-4.8',
+      memberModel: nonEmpty(env.MEMBER_AGENT_MODEL) ?? nonEmpty(env.AGENT_MODEL) ?? 'claude-sonnet-5',
+      adminModel: nonEmpty(env.ADMIN_AGENT_MODEL) ?? nonEmpty(env.AGENT_MODEL) ?? 'claude-sonnet-5',
       timeoutMs: parsePositiveInt(env.AGENT_TIMEOUT_MS, 120_000),
     },
     database: {
@@ -60,7 +60,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       betterAuthSecret: nonEmpty(env.BETTER_AUTH_SECRET) ?? nonEmpty(env.AUTH_SECRET) ?? 'dev-better-auth-secret-change-me',
       betterAuthUrl: nonEmpty(env.BETTER_AUTH_URL),
       organizationId: nonEmpty(env.AUTH_ORG_ID) ?? 'default-org',
-      organizationName: nonEmpty(env.AUTH_ORG_NAME) ?? 'Slidev Agent',
+      organizationName: nonEmpty(env.AUTH_ORG_NAME) ?? 'Deckhand',
       organizationSlug: normalizeSlug(nonEmpty(env.AUTH_ORG_SLUG) ?? 'default'),
     },
   };
@@ -98,7 +98,7 @@ function smtpConfig(env: NodeJS.ProcessEnv) {
     secure: env.SMTP_SECURE === 'true',
     user: env.SMTP_USER,
     pass: env.SMTP_PASS,
-    from: env.SMTP_FROM ?? 'Slidev Agent <no-reply@localhost>',
+    from: env.SMTP_FROM ?? 'Deckhand <no-reply@localhost>',
   };
 }
 

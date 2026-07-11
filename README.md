@@ -16,7 +16,7 @@ npm install
 npm run build
 ```
 
-## V1 app
+## Deckhand platform
 
 This repo now includes a v1 web app around the converter:
 
@@ -62,7 +62,7 @@ AUTH_DEV_LINK=false
 AUTH_BOOTSTRAP_ADMIN_EMAIL=admin@example.com
 AUTH_BOOTSTRAP_ADMIN_NAME="Admin"
 AUTH_ORG_ID=default-org
-AUTH_ORG_NAME="Slidev Agent"
+AUTH_ORG_NAME="Deckhand"
 AUTH_ORG_SLUG=default
 AUTH_SESSION_DAYS=14
 AUTH_TOKEN_MINUTES=30
@@ -73,7 +73,7 @@ SMTP_PORT=587
 SMTP_SECURE=false
 SMTP_USER=apikey-or-user
 SMTP_PASS=secret
-SMTP_FROM="Slidev Agent <no-reply@example.com>"
+SMTP_FROM="Deckhand <no-reply@example.com>"
 PORT_POOL_START=5500
 PORT_POOL_END=5599
 MAX_CONCURRENT_DECKS=8

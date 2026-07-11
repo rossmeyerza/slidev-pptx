@@ -20,7 +20,7 @@ export const BETTER_AUTH_BASE_PATH = '/api/better-auth';
 export function createBetterAuthOptions(config: AppConfig, pool: PgPool | null): BetterAuthOptions {
   const mailer = new Mailer(config);
   return {
-    appName: 'Slidev Agent',
+    appName: 'Deckhand',
     baseURL: config.auth.betterAuthUrl ?? config.publicBaseUrl,
     basePath: BETTER_AUTH_BASE_PATH,
     secret: config.auth.betterAuthSecret,
@@ -54,7 +54,7 @@ export function createBetterAuthOptions(config: AppConfig, pool: PgPool | null):
         async sendMagicLink({ email, url }) {
           const result = await mailer.send({
             to: email,
-            subject: 'Sign in to Slidev Agent',
+            subject: 'Sign in to Deckhand',
             text: `Use this one-time link to sign in: ${url}`,
             html: `<p>Use this one-time link to sign in:</p><p><a href="${escapeHtml(url)}">${escapeHtml(url)}</a></p>`,
           });

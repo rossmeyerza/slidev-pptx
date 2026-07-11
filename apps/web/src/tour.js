@@ -55,7 +55,7 @@ export function startDashboardTour() {
     {
       element: '[data-tour="hero"]',
       popover: {
-        title: 'Welcome to Slidev Agent',
+        title: 'Welcome to Deckhand',
         description: 'Decks here are written by an AI agent you brief in plain language. This 30-second tour shows the workflow.',
         side: 'bottom',
         align: 'start',

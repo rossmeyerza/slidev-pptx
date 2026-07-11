@@ -27,7 +27,7 @@ export class ShareService {
   /**
    * Creates a client share token for a deck.
    */
-  async share(deckId: string, input: { name?: string; email?: string; permission?: 'view' | 'edit'; password?: string; enabled?: boolean; createdByUserId?: string }): Promise<ShareRecord> {
+  async share(deckId: string, input: { name?: string; email?: string; permission?: 'view' | 'edit'; password?: string; enabled?: boolean; createdByUserId?: string; expiresInDays?: number }): Promise<ShareRecord> {
     await this.decks.get(deckId);
     const token = randomBytes(18).toString('base64url');
     const password = clean(input.password);
@@ -43,6 +43,8 @@ export class ShareService {
       enabled: input.enabled ?? true,
       url: `/share/${token}/#/1`,
       hasPassword: Boolean(passwordHash),
+      expiresAt: input.expiresInDays ? new Date(Date.now() + input.expiresInDays * 86_400_000).toISOString() : undefined,
+      viewCount: 0,
     };
 
     if (this.pool) await this.insertShare(record, input.createdByUserId ?? 'system', passwordHash);
@@ -63,13 +65,13 @@ export class ShareService {
   async sharesForDeck(deckId: string): Promise<ShareRecord[]> {
     if (this.pool) {
       const result = await this.pool.query(
-        'select * from share_link where deck_id = $1 and revoked_at is null order by created_at desc',
+        'select * from share_link where deck_id = $1 and revoked_at is null and (expires_at is null or expires_at > now()) order by created_at desc',
         [deckId],
       );
       return result.rows.map(rowToShare);
     }
     const shares = await this.readShares();
-    return shares.filter((share) => share.deckId === deckId && share.enabled).map(sanitizeShare);
+    return shares.filter((share) => share.deckId === deckId && share.enabled && (!share.expiresAt || Date.parse(share.expiresAt) > Date.now())).map(sanitizeShare);
   }
 
   /**
@@ -85,7 +87,7 @@ export class ShareService {
       return rowToShare(result.rows[0]);
     }
     const shares = await this.readShares();
-    const share = shares.find((candidate) => candidate.token === token && candidate.enabled);
+    const share = shares.find((candidate) => candidate.token === token && candidate.enabled && (!candidate.expiresAt || Date.parse(candidate.expiresAt) > Date.now()));
     if (!share) throw Object.assign(new Error('Share not found'), { statusCode: 404 });
     return sanitizeShare(share);
   }
@@ -138,6 +140,46 @@ export class ShareService {
     if (!remaining.length) {
       await this.decks.updateMeta(deckId, { visibility: 'private', shareToken: undefined });
     }
+  }
+
+  async shareForDeckById(deckId: string, shareId: string): Promise<ShareRecord> {
+    if (this.pool) {
+      const result = await this.pool.query('select * from share_link where id = $1 and deck_id = $2 and revoked_at is null and (expires_at is null or expires_at > now())', [shareId, deckId]);
+      if (!result.rowCount) throw Object.assign(new Error('Share not found'), { statusCode: 404 });
+      return rowToShare(result.rows[0]);
+    }
+    const share = (await this.readShares()).find((candidate) => candidate.id === shareId && candidate.deckId === deckId && candidate.enabled && (!candidate.expiresAt || Date.parse(candidate.expiresAt) > Date.now()));
+    if (!share) throw Object.assign(new Error('Share not found'), { statusCode: 404 });
+    return sanitizeShare(share);
+  }
+
+  async recordView(token: string): Promise<ShareRecord> {
+    const share = await this.getShare(token);
+    const now = new Date().toISOString();
+    if (this.pool) {
+      const result = await this.pool.query(
+        'update share_link set view_count = view_count + 1, last_viewed_at = now() where id = $1 returning *',
+        [share.id],
+      );
+      return rowToShare(result.rows[0]);
+    }
+    const shares = await this.readShares();
+    const index = shares.findIndex((candidate) => candidate.id === share.id);
+    shares[index] = { ...shares[index], viewCount: (shares[index].viewCount ?? 0) + 1, lastViewedAt: now };
+    await writeJson(this.sharesPath, shares);
+    return sanitizeShare(shares[index]);
+  }
+
+  async visitorsForShare(token: string): Promise<ShareVisitorRecord[]> {
+    const share = await this.getShare(token);
+    if (this.pool) {
+      const result = await this.pool.query(
+        'select * from share_visitor where share_link_id = $1 order by created_at desc',
+        [share.id],
+      );
+      return result.rows.map((row) => rowToVisitor(row, share.token));
+    }
+    return (await this.readVisitors()).filter((visitor) => visitor.shareToken === share.token).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
 
   /**
@@ -257,9 +299,9 @@ export class ShareService {
     await this.pool.query(
       `
         insert into share_link (
-          id, org_id, deck_id, token, permission, password_hash, display_name, email, created_by, created_at, revoked_at
+          id, org_id, deck_id, token, permission, password_hash, display_name, email, created_by, created_at, revoked_at, expires_at, view_count
         ) values (
-          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
+          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13
         )
       `,
       [
@@ -274,6 +316,8 @@ export class ShareService {
         createdByUserId,
         record.createdAt,
         record.enabled ? null : record.createdAt,
+        record.expiresAt ?? null,
+        record.viewCount ?? 0,
       ],
     );
   }
@@ -321,6 +365,9 @@ function rowToShare(row: Record<string, unknown>): ShareRecord {
     enabled: !row.revoked_at,
     url: `/share/${token}/#/1`,
     hasPassword: typeof row.password_hash === 'string' && row.password_hash.length > 0,
+    expiresAt: row.expires_at ? iso(row.expires_at) : undefined,
+    viewCount: Number(row.view_count ?? 0),
+    lastViewedAt: row.last_viewed_at ? iso(row.last_viewed_at) : undefined,
   };
 }
 

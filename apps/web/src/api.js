@@ -8,7 +8,7 @@ import { betterAuthSignOut, getBetterAuthSession, requestBetterAuthMagicLink } f
  * @typedef {{ id:string, title:string, owner:string, status:string, scaffoldKey?:string, activeEditorUserId?:string, updatedAt?:string, previewUrl?:string, publishedUrl?:string, shares?:ShareLink[], messages?:ChatMessage[], snapshots?:{id:string,createdAt:string}[], agent?:DeckAgentSettings, previewBuild?:PreviewBuild, pptx?:{ id:string, format?:'pptx'|'pdf'|'markdown', status:string, downloadUrl?:string, error?:string, updatedAt?:string, verification?:{ slideCount:number, imageCount:number } } }} Deck
  * @typedef {{ id:string, deckId:string, userId:string, role:'editor'|'viewer', createdAt:string, user?:User }} Collaborator
  * @typedef {{ key:string, name:string, description:string, isDefault:boolean, isActive?:boolean, minRole?:'admin'|'employee' }} Scaffold
- * @typedef {{ id:string, url:string, name:string, email:string, permission?:'view'|'edit', hasPassword?:boolean }} ShareLink
+ * @typedef {{ id:string, url:string, name:string, email:string, permission?:'view'|'edit', hasPassword?:boolean, expiresAt?:string, viewCount?:number, lastViewedAt?:string }} ShareLink
  * @typedef {Deck & { share?:ShareLink, visitor?:{ id:string, name:string, email:string }, passwordRequired?:boolean, visitorRequired?:boolean }} SharedDeck
  * @typedef {{ role:'user'|'agent', content:string, createdAt?:string }} ChatMessage
  */
@@ -132,20 +132,20 @@ export async function listScaffolds() {
   return payload.scaffolds ?? [];
 }
 
-export async function sendInstruction(deckId, instruction) {
+export async function sendInstruction(deckId, instruction, targetSlide) {
   const payload = await api(`/api/decks/${encodeURIComponent(deckId)}/instructions`, {
     method: 'POST',
-    body: JSON.stringify({ instruction }),
+    body: JSON.stringify({ instruction, ...(targetSlide ? { targetSlide } : {}) }),
   });
   return normalizeDeck(payload.deck ?? payload.data ?? payload);
 }
 
-export async function sendInstructionStream(deckId, instruction, onEvent = () => {}) {
+export async function sendInstructionStream(deckId, instruction, onEvent = () => {}, targetSlide) {
   const response = await fetch(`/api/decks/${encodeURIComponent(deckId)}/messages`, {
     method: 'POST',
     credentials: 'same-origin',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ instruction }),
+    body: JSON.stringify({ instruction, ...(targetSlide ? { targetSlide } : {}) }),
   });
   if (!response.ok || !response.body) {
     const text = await response.text().catch(() => '');
@@ -256,6 +256,42 @@ export async function publishDeck(deckId) {
 
 export async function createShare(deckId, input) {
   return api(`/api/decks/${encodeURIComponent(deckId)}/shares`, { method: 'POST', body: JSON.stringify(input) });
+}
+
+export async function updateDeck(deckId, input) {
+  const payload = await api(`/api/decks/${encodeURIComponent(deckId)}`, { method: 'PUT', body: JSON.stringify(input) });
+  return normalizeDeck(payload.deck ?? payload.data ?? payload);
+}
+
+export function deleteDeck(deckId) {
+  return api(`/api/decks/${encodeURIComponent(deckId)}`, { method: 'DELETE' });
+}
+
+export async function duplicateDeck(deckId) {
+  const payload = await api(`/api/decks/${encodeURIComponent(deckId)}/duplicate`, { method: 'POST', body: JSON.stringify({}) });
+  return normalizeDeck(payload.deck ?? payload.data ?? payload);
+}
+
+export function saveDeckAsTemplate(deckId, input) {
+  return api(`/api/decks/${encodeURIComponent(deckId)}/template`, { method: 'POST', body: JSON.stringify(input) });
+}
+
+export async function listDeckFiles(deckId) {
+  const payload = await api(`/api/decks/${encodeURIComponent(deckId)}/files`);
+  return payload.files ?? [];
+}
+
+export function getDeckFile(deckId, path) {
+  return api(`/api/decks/${encodeURIComponent(deckId)}/files/content?path=${encodeURIComponent(path)}`);
+}
+
+export function saveDeckFile(deckId, path, content) {
+  return api(`/api/decks/${encodeURIComponent(deckId)}/files/content`, { method: 'PUT', body: JSON.stringify({ path, content }) });
+}
+
+export async function listShareVisitors(deckId, shareId) {
+  const payload = await api(`/api/decks/${encodeURIComponent(deckId)}/shares/${encodeURIComponent(shareId)}/visitors`);
+  return payload.visitors ?? [];
 }
 
 export async function revokeShare(deckId, shareId) {

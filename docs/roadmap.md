@@ -28,14 +28,15 @@ to client-facing GTM.
 
 ## Milestone 2 — "Daily-drivable"
 
-- Human edit path: per-slide instruction targeting; raw slide drawer or
-  inline text fixes on the preview.
-- Deck lifecycle UI: rename, delete, duplicate; "save deck as template".
-- Agent run summaries in chat ("changed slides 2, 4; added slide 5") paired
-  with revert.
-- Share management: expiry UI (column exists), per-link visitor log
-  ("who viewed, when"), download toggle.
-- Rename the product (it is named after the retired runtime).
+- [x] Human edit path: per-slide instruction targeting and a raw slide/files
+  drawer with preview hot reload.
+- [x] Deck lifecycle UI: rename, delete, duplicate; "save deck as template".
+- [x] Agent run summaries in chat include changed files and manifest slide
+  numbers, paired with revert.
+- [x] Share management: expiry UI, per-link view analytics, and visitor log
+  ("who viewed, when"). Download toggle is deferred because no client-side
+  download exists yet.
+- [x] Rename the product to Deckhand (the old name referenced the retired runtime).
 
 ## Milestone 3 — "Client-facing GTM"
 

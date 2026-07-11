@@ -1,4 +1,4 @@
-import { promises as fs } from 'node:fs';
+import { existsSync, promises as fs } from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { AppConfig, DeckMeta, DeckRecord, ScaffoldRecord, UserRole } from '../core/types.js';
@@ -52,22 +52,31 @@ export class DeckStore {
    * Lists scaffold folders available under themes/.
    */
   async listScaffolds(input: { includeInactive?: boolean; userRole?: UserRole } = {}): Promise<ScaffoldRecord[]> {
-    const root = path.join(this.config.repoRoot, 'themes');
-    const entries = await fs.readdir(root, { withFileTypes: true }).catch(() => []);
+    const themesRoot = path.join(this.config.repoRoot, 'themes');
+    const templatesRoot = path.join(this.config.dataDir, 'templates');
+    const roots = [
+      { root: themesRoot, priority: 0 },
+      { root: templatesRoot, priority: 1 },
+    ];
+    const discovered = new Map<string, { root: string; priority: number }>();
+    for (const candidate of roots) {
+      const entries = await fs.readdir(candidate.root, { withFileTypes: true }).catch(() => []);
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue;
+        const key = normalizeScaffoldKey(entry.name);
+        if (key && !discovered.has(key)) discovered.set(key, candidate);
+      }
+    }
     const settings = await new SettingsService(this.config).load();
     const configured = settings.scaffolds?.items ?? {};
     const defaultKey = settings.scaffolds?.defaultKey ?? this.config.scaffoldKey;
-    const scaffolds = await Promise.all(entries
-      .filter((entry) => entry.isDirectory())
-      .map(async (entry) => {
-        const key = normalizeScaffoldKey(entry.name);
-        if (!key) return null;
+    const scaffolds = await Promise.all([...discovered.entries()].map(async ([key, source]) => {
         const overrides = configured[key] ?? {};
-        const isActive = overrides.isActive ?? await fs.access(path.join(root, key, 'deck.json')).then(() => true).catch(() => false);
+        const isActive = overrides.isActive ?? await fs.access(path.join(source.root, key, 'deck.json')).then(() => true).catch(() => false);
         const minRole = overrides.minRole ?? 'employee';
         if (!input.includeInactive && !isActive) return null;
         if (input.userRole !== 'admin' && minRole === 'admin') return null;
-        const packageJson = await readText(path.join(root, key, 'package.json'), '{}');
+        const packageJson = await readText(path.join(source.root, key, 'package.json'), '{}');
         const details = parsePackageDetails(packageJson);
         return {
           key,
@@ -105,7 +114,9 @@ export class DeckStore {
     await this.assertScaffoldExists(scaffoldKey);
     const isHtmlRuntime = await this.isHtmlScaffold(scaffoldKey);
     const title = normalizeTitle(input.title) ?? inferTitle(input.markdown) ?? 'Untitled deck';
-    const markdown = input.markdown ?? setSlidevTitle((await this.scaffoldMarkdown(scaffoldKey)).replaceAll('Slidev Agent Platform', title), title);
+    const markdown = input.markdown ?? setSlidevTitle((await this.scaffoldMarkdown(scaffoldKey))
+      .replaceAll(['Slidev', 'Agent', 'Platform'].join(' '), title)
+      .replaceAll('Deckhand', title), title);
     const orgId = await this.configuredOrgId();
     const meta: DeckMeta = {
       id,
@@ -197,7 +208,90 @@ export class DeckStore {
       writeText(this.deckFile(id), markdown),
       this.writeMeta(meta),
     ]);
+    if (title !== current.meta.title && await this.isHtmlDeck(id)) {
+      await this.applyDeckManifestTitle(id, title, false);
+    }
     return { meta, markdown };
+  }
+
+  async duplicate(id: string, ownerUserId: string): Promise<DeckRecord> {
+    const source = await this.get(id);
+    const now = new Date().toISOString();
+    const newId = randomUUID();
+    await fs.cp(this.deckDir(id), this.deckDir(newId), {
+      recursive: true,
+      force: false,
+      filter: (entry) => !['.snapshots', 'node_modules', 'dist', '.git'].includes(path.basename(entry)),
+    });
+    const html = await this.isHtmlDeck(newId);
+    const meta: DeckMeta = {
+      id: newId,
+      orgId: await this.configuredOrgId(),
+      title: `Copy of ${source.meta.title}`,
+      scaffoldKey: source.meta.scaffoldKey,
+      ownerUserId,
+      status: 'draft',
+      createdAt: now,
+      updatedAt: now,
+      visibility: 'private',
+      draftUrl: html ? `/runtime/${newId}/#/1` : `/draft/${newId}/#/1`,
+    };
+    await this.linkRuntimeDependencies(newId);
+    if (html) await this.applyDeckManifestTitle(newId, meta.title, false);
+    if (this.pool) await this.insertMeta(meta, ownerUserId);
+    else await writeJson(this.metaFile(newId), meta);
+    return { meta, markdown: await readRequiredText(this.deckFile(newId), 'Deck') };
+  }
+
+  async saveAsTemplate(id: string, input: { name: string; description?: string }): Promise<ScaffoldRecord> {
+    await this.get(id);
+    if (!await this.isHtmlDeck(id)) throw Object.assign(new Error('Only HTML runtime decks can be saved as templates'), { statusCode: 400 });
+    const key = slugify(input.name);
+    if (!/^[a-z0-9][a-z0-9-]*$/.test(key)) throw Object.assign(new Error('Invalid template name'), { statusCode: 400 });
+    const themeDir = path.join(this.config.repoRoot, 'themes', key);
+    const target = path.join(this.config.dataDir, 'templates', key);
+    if (existsSync(themeDir) || existsSync(target)) throw Object.assign(new Error(`Scaffold already exists: ${key}`), { statusCode: 403 });
+    await fs.mkdir(target, { recursive: false });
+    const source = this.deckDir(id);
+    for (const name of ['theme.css', 'slides', 'assets', 'public', 'index.html', 'runtime.js', 'runtime.css']) {
+      const from = path.join(source, name);
+      const stat = await fs.lstat(from).catch(() => undefined);
+      if (stat) await fs.cp(from, path.join(target, name), { recursive: stat.isDirectory(), force: false });
+    }
+    const manifest = JSON.parse(await readRequiredText(path.join(source, 'deck.json'), 'Deck manifest')) as Record<string, unknown>;
+    manifest.title = 'Untitled deck';
+    await writeText(path.join(target, 'deck.json'), `${JSON.stringify(manifest, null, 2)}\n`);
+    await writeJson(path.join(target, 'package.json'), { name: input.name.trim(), description: input.description?.trim() ?? '', private: true, version: '1.0.0' });
+    await fs.copyFile(path.join(this.config.repoRoot, 'themes', 'custom-html', 'slides.md'), path.join(target, 'slides.md'));
+    return (await this.listScaffolds({ includeInactive: true, userRole: 'admin' })).find((item) => item.key === key)!;
+  }
+
+  async editableFiles(id: string): Promise<{ path: string; size: number }[]> {
+    await this.get(id);
+    const paths = await this.editableFilePaths(id);
+    const files = await Promise.all(paths.map(async (relativePath) => ({
+      path: relativePath,
+      size: (await fs.stat(path.join(this.deckDir(id), relativePath))).size,
+    })));
+    return files;
+  }
+
+  async readEditableFile(id: string, relativePath: string): Promise<string> {
+    await this.assertEditableFile(id, relativePath);
+    const file = path.join(this.deckDir(id), relativePath);
+    const stat = await fs.stat(file);
+    if (stat.size > 1024 * 1024) throw Object.assign(new Error('File exceeds the 1 MB limit'), { statusCode: 413 });
+    return fs.readFile(file, 'utf8');
+  }
+
+  async writeEditableFile(id: string, relativePath: string, content: string): Promise<void> {
+    await this.assertEditableFile(id, relativePath);
+    if (Buffer.byteLength(content) > 1024 * 1024) throw Object.assign(new Error('File exceeds the 1 MB limit'), { statusCode: 413 });
+    if (relativePath === 'deck.json') {
+      try { JSON.parse(content); } catch { throw Object.assign(new Error('Invalid deck.json JSON'), { statusCode: 400 }); }
+    }
+    await writeText(path.join(this.deckDir(id), relativePath), content);
+    await this.updateMeta(id, {});
   }
 
   /**
@@ -365,6 +459,21 @@ export class DeckStore {
     return this.deckDir(id);
   }
 
+  private async editableFilePaths(id: string): Promise<string[]> {
+    if (!await this.isHtmlDeck(id)) return ['slides.md'];
+    const manifest = JSON.parse(await readRequiredText(path.join(this.deckDir(id), 'deck.json'), 'Deck manifest')) as { slides?: unknown };
+    const slides = Array.isArray(manifest.slides) ? manifest.slides.filter((value): value is string => typeof value === 'string' && /^slides\/[^/]+\.html$/.test(value)) : [];
+    return ['deck.json', 'theme.css', ...slides];
+  }
+
+  private async assertEditableFile(id: string, relativePath: string): Promise<void> {
+    if (!(await this.editableFilePaths(id)).includes(relativePath)) throw Object.assign(new Error('File not found'), { statusCode: 404 });
+  }
+
+  private async isHtmlDeck(id: string): Promise<boolean> {
+    return fs.access(path.join(this.deckDir(id), 'deck.json')).then(() => true).catch(() => false);
+  }
+
   private async readMeta(id: string): Promise<DeckMeta> {
     this.assertDeckId(id);
     if (this.pool) {
@@ -486,7 +595,8 @@ export class DeckStore {
 
   private scaffoldDir(scaffoldKey = this.config.scaffoldKey): string {
     const key = normalizeScaffoldKey(scaffoldKey) ?? 'commercial-profile';
-    return path.join(this.config.repoRoot, 'themes', key);
+    const theme = path.join(this.config.repoRoot, 'themes', key);
+    return existsSync(theme) ? theme : path.join(this.config.dataDir, 'templates', key);
   }
 
   private async scaffoldMarkdown(scaffoldKey: string): Promise<string> {
@@ -526,7 +636,7 @@ export class DeckStore {
     }
   }
 
-  private async applyDeckManifestTitle(id: string, title: string): Promise<void> {
+  private async applyDeckManifestTitle(id: string, title: string, stampSlidePlaceholders = true): Promise<void> {
     const manifestPath = path.join(this.deckDir(id), 'deck.json');
     try {
       const manifest = JSON.parse(await readRequiredText(manifestPath, 'Deck manifest')) as Record<string, unknown>;
@@ -537,6 +647,7 @@ export class DeckStore {
     }
     // Scaffold slides carry the "Untitled deck" placeholder; stamp the real
     // title into slide copy so the cover matches the deck from the start.
+    if (!stampSlidePlaceholders) return;
     const slidesDir = path.join(this.deckDir(id), 'slides');
     const entries = await fs.readdir(slidesDir, { withFileTypes: true }).catch(() => []);
     for (const entry of entries) {

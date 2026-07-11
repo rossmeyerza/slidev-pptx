@@ -74,7 +74,22 @@ export async function runDeepAgentDeckEdit(
     };
     const result = await runDeepAgentWithEvents(agent, state, runOptions, options.onEvent);
 
-    const parsed = await parseDeepAgentResult(result, deck, deckRoot, before);
+    let parsed = await parseDeepAgentResult(result, deck, deckRoot, before);
+    if (isWorkspaceDeck(deck) && parsed.mode === 'workspace' && !parsed.changedFiles?.length) {
+      // The model sometimes answers from the prompt-embedded file contents and
+      // claims success without a single tool call. Confront it once on the
+      // same thread before giving up; the route-level guard fails the run if
+      // this retry also produces no file changes.
+      options.onEvent?.('status', { status: 'retrying_no_changes' });
+      const retryState = {
+        messages: [{
+          role: 'user',
+          content: 'No deck files were actually modified — your response claimed a change that never happened. Apply the requested change NOW using write_file or edit_file tool calls, verify by re-reading the file, then return the structured output again.',
+        }],
+      };
+      const retryResult = await runDeepAgentWithEvents(agent, retryState, runOptions, options.onEvent);
+      parsed = await parseDeepAgentResult(retryResult, deck, deckRoot, before);
+    }
     return { ...parsed, model: runConfig.model };
   } finally {
     await checkpointer?.end();
@@ -263,6 +278,7 @@ function deepAgentPrompt(roleScope: 'admin' | 'member', deck: DeckRecord): strin
       '- You cannot delete files. To remove or rename a slide, update the slides array in /deck.json; previously existing slide files no longer referenced by the manifest are pruned automatically after your run. Prefer inserting new slides without renumbering existing files unless the user asks for a reorder.',
       '- CRITICAL: any slide file you create is invisible until /deck.json lists it. Whenever you add, remove, or rename a slide file, update /deck.json in the same run and verify the write succeeded (re-read it if unsure). If an edit_file call fails, rewrite the whole file with write_file.',
       'Use read_file, write_file, edit_file, ls, glob, and grep to inspect and modify files.',
+      '- Changes ONLY count when made through write_file or edit_file tool calls. Never claim an edit you did not perform with a tool — a run that modifies no files is treated as a failure. The file contents shown in the request are for reference; restating them is not editing.',
       'Return structured output with summary and changedFiles.',
       `Deck id: ${deck.meta.id}`,
     ];
@@ -332,11 +348,10 @@ async function parseDeepAgentResult(
 
   if (isWorkspaceDeck(deck)) {
     await pruneOrphanSlides(deckRoot, beforeWorkspace);
-    const detected = await changedWorkspaceFiles(deckRoot, beforeWorkspace);
-    const reported = Array.isArray(candidate.changedFiles)
-      ? candidate.changedFiles.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
-      : [];
-    const changedFiles = [...new Set([...detected, ...reported.map(normalizeVirtualPath).filter(isWorkspaceEditablePath)])].sort();
+    // Trust only the disk diff. The model's self-reported changedFiles can
+    // claim edits that never reached disk (observed with edit_file failures);
+    // counting them would let a no-op run pass for a successful one.
+    const changedFiles = await changedWorkspaceFiles(deckRoot, beforeWorkspace);
     return {
       mode: 'workspace',
       changedFiles,

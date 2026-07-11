@@ -66,6 +66,9 @@ export interface ShareRecord {
   enabled: boolean;
   url: string;
   hasPassword?: boolean;
+  expiresAt?: string;
+  viewCount?: number;
+  lastViewedAt?: string;
 }
 
 export interface ShareVisitorRecord {

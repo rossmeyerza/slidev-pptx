@@ -47,7 +47,7 @@ export function createApiRouter(
   const router = new Router();
 
   router.add('GET', '/api/health', (_req, res) => {
-    sendJson(res, 200, { ok: true, service: 'slidev-agent-server' });
+    sendJson(res, 200, { ok: true, service: 'deckhand-server' });
   });
 
   router.add('GET', '/api/auth/provider', (_req, res) => {
@@ -273,6 +273,51 @@ export function createApiRouter(
     sendJson(res, 200, await formatDeck(deck, await shares.sharesForDeck(req.params.id), chat, decks, slidev));
   });
 
+  router.add('POST', '/api/decks/:id/duplicate', async (req, res) => {
+    const context = await auth.requireUser(req);
+    await requireDeckAccess(decks, collaborators, req.params.id, context.user, 'edit');
+    const deck = await decks.duplicate(req.params.id, context.user.id);
+    scheduleDraftBuildIfNeeded(slidev, deck);
+    sendJson(res, 201, await formatDeck(deck, [], chat, decks, slidev));
+  });
+
+  router.add('POST', '/api/decks/:id/template', async (req, res) => {
+    const context = await auth.requireAdmin(req);
+    await requireDeckAccess(decks, collaborators, req.params.id, context.user, 'edit');
+    const body = asObject(req.body);
+    const scaffold = await decks.saveAsTemplate(req.params.id, {
+      name: requiredString(body.name, 'name'),
+      description: optionalString(body.description),
+    });
+    sendJson(res, 201, { scaffold });
+  });
+
+  router.add('GET', '/api/decks/:id/files', async (req, res) => {
+    const context = await auth.requireUser(req);
+    await requireDeckAccess(decks, collaborators, req.params.id, context.user, 'view');
+    sendJson(res, 200, { files: await decks.editableFiles(req.params.id) });
+  });
+
+  router.add('GET', '/api/decks/:id/files/content', async (req, res) => {
+    const context = await auth.requireUser(req);
+    await requireDeckAccess(decks, collaborators, req.params.id, context.user, 'view');
+    const requestedPath = req.urlObject.searchParams.get('path') ?? '';
+    sendJson(res, 200, { path: requestedPath, content: await decks.readEditableFile(req.params.id, requestedPath) });
+  });
+
+  router.add('PUT', '/api/decks/:id/files/content', async (req, res) => {
+    const context = await auth.requireUser(req);
+    await requireDeckAccess(decks, collaborators, req.params.id, context.user, 'edit');
+    await decks.requireEditLock(req.params.id, context.user.id);
+    const body = asObject(req.body);
+    const requestedPath = requiredString(body.path, 'path');
+    if (typeof body.content !== 'string') throw Object.assign(new Error('content is required'), { statusCode: 400 });
+    await decks.writeEditableFile(req.params.id, requestedPath, body.content);
+    runtimeEvents.emit(req.params.id, [requestedPath]);
+    scheduleDraftBuildIfNeeded(slidev, await decks.get(req.params.id));
+    sendJson(res, 200, { ok: true });
+  });
+
   router.add('POST', '/api/decks/:id/instructions', async (req, res) => {
     const context = await auth.requireUser(req);
     await requireDeckAccess(decks, collaborators, req.params.id, context.user, 'edit');
@@ -338,16 +383,19 @@ export function createApiRouter(
 
   router.add('POST', '/api/decks/:id/messages', async (req, res) => {
     const context = await auth.requireUser(req);
+    await requireDeckAccess(decks, collaborators, req.params.id, context.user, 'edit');
+    await decks.requireEditLock(req.params.id, context.user.id);
+    const body = asObject(req.body);
+    const instruction = optionalString(body.instruction) ?? optionalString(body.message) ?? '';
+    await targetedInstruction(decks, await decks.get(req.params.id), body.targetSlide, instruction.trim());
     res.writeHead(200, {
       'content-type': 'text/event-stream; charset=utf-8',
       'cache-control': 'no-cache, no-transform',
       connection: 'keep-alive',
     });
     try {
-      await requireDeckAccess(decks, collaborators, req.params.id, context.user, 'edit');
-      await decks.requireEditLock(req.params.id, context.user.id);
       sendSse(res, 'status', { status: 'running' });
-      const deck = await recordInstruction(config, decks, chat, agentRuns, req.params.id, asObject(req.body), context.user, (event, data) => {
+      const deck = await recordInstruction(config, decks, chat, agentRuns, req.params.id, body, context.user, (event, data) => {
         sendSse(res, event, data);
         if (event === 'file_activity' && data && typeof data === 'object' && typeof (data as { path?: unknown }).path === 'string') {
           runtimeEvents.emit(req.params.id, [(data as { path: string }).path.replace(/^\/+/, '')]);
@@ -478,6 +526,7 @@ export function createApiRouter(
       permission: body.permission === 'edit' ? 'edit' : 'view',
       password: optionalString(body.password),
       createdByUserId: context.user.id,
+      expiresInDays: optionalPositiveInt(body.expiresInDays, 'expiresInDays'),
     });
     sendJson(res, 200, { share: formatShare(share) });
   });
@@ -492,6 +541,7 @@ export function createApiRouter(
       permission: body.permission === 'edit' ? 'edit' : 'view',
       password: optionalString(body.password),
       createdByUserId: context.user.id,
+      expiresInDays: optionalPositiveInt(body.expiresInDays, 'expiresInDays'),
     });
     sendJson(res, 200, { share: formatShare(share) });
   });
@@ -501,6 +551,13 @@ export function createApiRouter(
     await requireDeckAccess(decks, collaborators, req.params.id, context.user, 'edit');
     await shares.revoke(req.params.id, req.params.shareId);
     sendJson(res, 200, { ok: true });
+  });
+
+  router.add('GET', '/api/decks/:id/shares/:shareId/visitors', async (req, res) => {
+    const context = await auth.requireUser(req);
+    await requireDeckAccess(decks, collaborators, req.params.id, context.user, 'view');
+    const share = await shares.shareForDeckById(req.params.id, req.params.shareId);
+    sendJson(res, 200, { visitors: await shares.visitorsForShare(share.token) });
   });
 
   router.add('GET', '/api/decks/:id/collaborators', async (req, res) => {
@@ -545,12 +602,14 @@ export function createApiRouter(
     }
     const deck = await shares.getSharedDeck(req.params.token);
     const visitor = await shares.visitorForShare(req.params.token, readCookie(req.headers.cookie ?? '', shareVisitorCookieName(req.params.token)));
+    const visitorRequired = share.permission === 'edit' && !visitor;
+    const viewedShare = visitorRequired ? share : await shares.recordView(req.params.token);
     sendJson(res, 200, {
       ...(await formatDeck(deck, [], chat, decks)),
-      share: formatShare(share),
+      share: formatShare(viewedShare),
       visitor,
       passwordRequired: false,
-      visitorRequired: share.permission === 'edit' && !visitor,
+      visitorRequired,
     });
   });
 
@@ -1304,6 +1363,7 @@ async function recordInstruction(
     throw Object.assign(new Error('Instruction is required'), { statusCode: 400 });
   }
   const deck = await decks.get(id);
+  const target = await targetedInstruction(decks, deck, body.targetSlide, instruction.trim());
   await decks.snapshotDeck(id);
   const now = new Date().toISOString();
   const runConfig = agentRunConfig(config, user, deck);
@@ -1317,7 +1377,7 @@ async function recordInstruction(
   emit?.('run', { run });
   try {
     emit?.('status', { status: 'calling_model', runId: run.id });
-    const result = await runDeckEditAgent(config, user, deck, instruction.trim(), {
+    const result = await runDeckEditAgent(config, user, deck, target.agentInstruction, {
       signal: controller.signal,
       deckRoot: decks.deckPath(id),
       onEvent: (event, data) => emit?.(event, { ...(typeof data === 'object' && data !== null ? data as Record<string, unknown> : { value: data }), runId: run.id }),
@@ -1325,10 +1385,10 @@ async function recordInstruction(
     emit?.('status', { status: 'writing_file', runId: run.id });
     const updatedDeck = await applyAgentEditResult(decks, deck, id, result, emit, run.id);
     const messages = [
-      { role: 'user' as const, content: instruction.trim(), createdAt: now },
+      { role: 'user' as const, content: `${instruction.trim()}${target.slideNumber ? ` (slide ${target.slideNumber})` : ''}`, createdAt: now },
       {
         role: 'agent' as const,
-        content: `${result.summary}\n\nModel: ${result.model}\nRun: ${run.id}`,
+        content: `${result.summary}${await changedFilesSummary(decks, id, result.changedFiles)}\n\nModel: ${result.model}\nRun: ${run.id}`,
         createdAt: new Date().toISOString(),
       },
     ];
@@ -1343,6 +1403,42 @@ async function recordInstruction(
   }
 }
 
+async function targetedInstruction(
+  decks: DeckStore,
+  deck: DeckRecord,
+  requested: unknown,
+  instruction: string,
+): Promise<{ agentInstruction: string; slideNumber?: number }> {
+  if (!isCustomRuntimeDeck(deck) || requested === undefined || requested === null || requested === '') return { agentInstruction: instruction };
+  const slideNumber = Number(requested);
+  if (!Number.isInteger(slideNumber) || slideNumber < 1) throw Object.assign(new Error('targetSlide must be a positive integer'), { statusCode: 400 });
+  const manifest = JSON.parse(await fs.readFile(path.join(decks.deckPath(deck.meta.id), 'deck.json'), 'utf8')) as { slides?: unknown };
+  const slides = Array.isArray(manifest.slides) ? manifest.slides : [];
+  const slidePath = slides[slideNumber - 1];
+  if (typeof slidePath !== 'string') throw Object.assign(new Error('targetSlide is out of range'), { statusCode: 400 });
+  return {
+    agentInstruction: `Focus this edit on slide ${slideNumber} (/${slidePath}). Only change other files if the request strictly requires it.\n\n${instruction}`,
+    slideNumber,
+  };
+}
+
+async function changedFilesSummary(decks: DeckStore, id: string, changedFiles: string[] | undefined): Promise<string> {
+  if (!changedFiles?.length) return '';
+  let slides: string[] = [];
+  try {
+    const manifest = JSON.parse(await fs.readFile(path.join(decks.deckPath(id), 'deck.json'), 'utf8')) as { slides?: unknown };
+    slides = Array.isArray(manifest.slides) ? manifest.slides.filter((value): value is string => typeof value === 'string') : [];
+  } catch {
+    slides = [];
+  }
+  const formatted = changedFiles.map((file) => {
+    const normalized = file.replace(/^\/+/, '');
+    const index = normalized.startsWith('slides/') ? slides.indexOf(normalized) : -1;
+    return `${normalized}${index >= 0 ? ` (slide ${index + 1})` : ''}`;
+  });
+  return `\n\nChanged: ${formatted.join(', ')}`;
+}
+
 async function applyAgentEditResult(
   decks: DeckStore,
   deck: Awaited<ReturnType<DeckStore['get']>>,
@@ -1354,7 +1450,7 @@ async function applyAgentEditResult(
   if (result.mode === 'workspace') {
     const changedFiles = result.changedFiles ?? [];
     if (!changedFiles.length) {
-      throw Object.assign(new Error('Agent did not change any runtime workspace files'), { statusCode: 502 });
+      throw Object.assign(new Error('The agent finished without changing any deck files. Re-send or rephrase the instruction.'), { statusCode: 502 });
     }
     for (const file of changedFiles) {
       emit?.('file_change', { path: file.replace(/^\//, ''), deckId: id, runId });

@@ -578,7 +578,7 @@ export class AuthService {
 function loginEmail(to: string, url: string) {
   return {
     to,
-    subject: 'Sign in to Slidev Agent',
+    subject: 'Sign in to Deckhand',
     text: `Use this one-time link to sign in: ${url}`,
     html: `<p>Use this one-time link to sign in:</p><p><a href="${escapeHtml(url)}">${escapeHtml(url)}</a></p>`,
   };
@@ -587,7 +587,7 @@ function loginEmail(to: string, url: string) {
 function inviteEmail(to: string, url: string, role: UserRole) {
   return {
     to,
-    subject: 'You have been invited to Slidev Agent',
+    subject: 'You have been invited to Deckhand',
     text: `You have been invited as ${role}. Use this one-time link to accept: ${url}`,
     html: `<p>You have been invited as <strong>${role}</strong>.</p><p><a href="${escapeHtml(url)}">Accept invite</a></p>`,
   };

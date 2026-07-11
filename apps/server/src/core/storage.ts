@@ -13,6 +13,7 @@ export async function ensureDataDirs(dataDir: string): Promise<void> {
     fs.mkdir(path.join(dataDir, 'published'), { recursive: true }),
     fs.mkdir(path.join(dataDir, 'auth'), { recursive: true }),
     fs.mkdir(path.join(dataDir, 'logs'), { recursive: true }),
+    fs.mkdir(path.join(dataDir, 'templates'), { recursive: true }),
   ]);
 }
 
