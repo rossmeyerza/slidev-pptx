@@ -1,6 +1,7 @@
 // @ts-check
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { shouldAutoStartDashboardTour, shouldAutoStartWorkbenchTour, startDashboardTour, startWorkbenchTour } from './tour.js';
 
 /* Icon bodies extracted from @iconify-json/mdi (Apache-2.0), 24x24 viewBox.
    Inline so the app stays self-contained — no icon font, no CDN. */
@@ -761,6 +762,11 @@ function DeckDashboard({ user, decks, scaffolds, loading, onSelectDeck, onCreate
   const [showImport, setShowImport] = useState(false);
   const defaultScaffold = scaffolds.find((item) => item.isDefault)?.key ?? scaffolds[0]?.key ?? '';
   const selectedScaffold = scaffold || defaultScaffold;
+  useEffect(() => {
+    if (loading || !shouldAutoStartDashboardTour()) return undefined;
+    const timer = setTimeout(() => startDashboardTour(), 600);
+    return () => clearTimeout(timer);
+  }, [loading]);
   const sortedDecks = [...decks].sort((left, right) => String(right.updatedAt ?? '').localeCompare(String(left.updatedAt ?? '')));
   const recentDecks = sortedDecks.slice(0, 6);
 
@@ -773,12 +779,16 @@ function DeckDashboard({ user, decks, scaffolds, loading, onSelectDeck, onCreate
         </div>
       </div>
 
-      <section className="dashboard-hero card shadow-sm mb-4" aria-label="How this works">
+      <section className="dashboard-hero card shadow-sm mb-4" aria-label="How this works" data-tour="hero">
         <div className="card-body">
           <div className="hero-copy">
             <p className="page-eyebrow mb-2">Deck agent</p>
             <h2 className="hero-title">Describe the deck. The agent builds it.</h2>
-            <p className="hero-lead mb-0">Chat with an agent that writes branded slides in front of you — then hand your client a live link or a pixel-perfect PowerPoint.</p>
+            <p className="hero-lead mb-3">Chat with an agent that writes branded slides in front of you — then hand your client a live link or a pixel-perfect PowerPoint.</p>
+            <button type="button" className="btn btn-sm hero-tour-btn" onClick={() => startDashboardTour()}>
+              <Icon name="bolt" size={15} />
+              Take the tour
+            </button>
           </div>
           <ol className="hero-steps">
             <li>
@@ -806,7 +816,7 @@ function DeckDashboard({ user, decks, scaffolds, loading, onSelectDeck, onCreate
         </div>
       </section>
 
-      <div className="card shadow-sm mb-4">
+      <div className="card shadow-sm mb-4" data-tour="start-deck">
         <div className="card-header d-flex align-items-center gap-2">
           <Icon name="sparkles" size={18} className="text-primary" />
           <div>
@@ -903,7 +913,7 @@ function DeckDashboard({ user, decks, scaffolds, loading, onSelectDeck, onCreate
           <p className="text-body-secondary small mb-0">{user?.role === 'admin' ? 'Latest decks visible across the workspace.' : 'Your latest visible decks and shared work.'}</p>
         </div>
       </div>
-      <div className="deck-grid">
+      <div className="deck-grid" data-tour="recent-decks">
         {loading ? <div className="card shadow-sm"><div className="card-body text-body-secondary">Loading decks...</div></div> : null}
         {!loading && !decks.length ? (
           <div className="card shadow-sm empty-state">
@@ -943,7 +953,7 @@ function DashboardSummary({ user, decks, scaffolds }) {
   const stats = dashboardStats(decks, scaffolds);
   const admin = user?.role === 'admin';
   return (
-    <section className="dashboard-summary mb-4" aria-label="Workspace summary">
+    <section className="dashboard-summary mb-4" aria-label="Workspace summary" data-tour="summary">
       <article>
         <span className="page-eyebrow d-inline-flex align-items-center gap-1"><Icon name="presentation" size={14} />{admin ? 'Workspace decks' : 'Visible decks'}</span>
         <div className="summary-value">{stats.totalDecks}</div>
@@ -1314,6 +1324,11 @@ function Workbench({ deck, currentUser, onBack, onSend, onCancel }) {
     staleTime: 30_000,
     retry: 1,
   });
+  useEffect(() => {
+    if (!deck?.id || !shouldAutoStartWorkbenchTour()) return undefined;
+    const timer = setTimeout(() => startWorkbenchTour(), 800);
+    return () => clearTimeout(timer);
+  }, [deck?.id]);
   if (!deck) return <p className="text-body-secondary">Select a deck first.</p>;
 
   const customRuntime = isCustomRuntimeDeck(deck);
@@ -1332,7 +1347,7 @@ function Workbench({ deck, currentUser, onBack, onSend, onCancel }) {
       </div>
 
       <div className="workbench-grid">
-        <section className="card shadow-sm">
+        <section className="card shadow-sm" data-tour="workbench-preview">
           <div className="card-header d-flex flex-wrap align-items-center justify-content-between gap-3">
             <div>
               <h3 className="h5 mb-1">Deck preview</h3>
@@ -1345,7 +1360,7 @@ function Workbench({ deck, currentUser, onBack, onSend, onCancel }) {
           </div>
           <PreviewFrame src={previewUrl} workbench reloadToken={previewReload} />
         </section>
-        <section className="card shadow-sm workbench-chat">
+        <section className="card shadow-sm workbench-chat" data-tour="workbench-chat">
           <div className="card-header d-flex align-items-center gap-2">
             <Icon name="chat" size={18} className="text-primary" />
             <div>
