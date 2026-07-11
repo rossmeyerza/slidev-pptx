@@ -31,6 +31,8 @@
   },
   "dependencies": {
     "@animxyz/core": "^0.6.6",
+    "@fontsource-variable/inter": "^5.2.8",
+    "@fontsource-variable/space-grotesk": "^5.2.10",
     "@iconify-json/mdi": "^1.2.3",
     "@langchain/anthropic": "^1.5.1",
     "@langchain/core": "^1.2.1",

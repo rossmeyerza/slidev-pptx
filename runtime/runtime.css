@@ -1,0 +1,650 @@
+/* Runtime shell styles. Do not edit: deck visuals belong in theme.css.
+   The stage is a fixed 1280x720 canvas scaled to fit the viewport, so slide
+   coordinates are stable for authoring, preview, and PPTX export.
+
+   Chrome styling is ported from Slidev's client UI (icon bar, overview grid,
+   goto dialog, drawing toolbar, presenter layout) without Vue/Vite. */
+
+:root {
+  --deck-primary: #3ab9d5;
+  --deck-transition-duration: 0.4s;
+  --deck-chrome-bg: #121212;
+  --deck-chrome-fg: #dddddd;
+  --deck-chrome-border: rgba(128, 128, 128, 0.2);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  overflow: hidden;
+  background: #101418;
+  font: 400 15px/1.5 ui-sans-serif, system-ui, sans-serif;
+  color: var(--deck-chrome-fg);
+}
+
+/* ---------- stage ---------- */
+
+.deck-viewport {
+  position: fixed;
+  inset: 0;
+}
+
+/* Centered via translate in the transform (see fitStage) rather than grid
+   alignment: an unscaled 1280px stage overflows small containers, and
+   overflowing centered grid items get start-aligned. */
+.deck-stage {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 1280px;
+  height: 720px;
+  overflow: hidden;
+  background: #ffffff;
+  transform-origin: center;
+  transform: translate(-50%, -50%);
+}
+
+/* Slide visibility is toggled via inline style by runtime.js so that theme
+   layout classes keep full control of `display` (grid, flex, ...). */
+.deck-stage .slide {
+  position: absolute;
+  inset: 0;
+}
+
+/* Presenter notes live inside slides but never render on the stage. */
+.deck-stage .slide aside.notes,
+.deck-thumb .slide aside.notes {
+  display: none !important;
+}
+
+/* ---------- click / build steps ---------- */
+
+.deck-stage [data-click] {
+  transition: opacity 150ms ease;
+}
+
+.deck-stage .click-hidden {
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+/* ---------- slide transitions ---------- */
+
+.deck-stage .slide.transitioning {
+  transition:
+    transform var(--deck-transition-duration) cubic-bezier(0.4, 0, 0.2, 1),
+    opacity var(--deck-transition-duration) cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: transform, opacity;
+}
+
+.deck-stage .slide.slide-enter-right { transform: translateX(100%); }
+.deck-stage .slide.slide-enter-left  { transform: translateX(-100%); }
+.deck-stage .slide.slide-leave-right { transform: translateX(100%); }
+.deck-stage .slide.slide-leave-left  { transform: translateX(-100%); }
+.deck-stage .slide.fade-out { opacity: 0; }
+.deck-stage .slide.fade-in  { opacity: 1; }
+
+@media (prefers-reduced-motion: reduce) {
+  .deck-stage .slide.transitioning { transition: none; }
+}
+
+/* ---------- icon buttons (ported from Slidev .slidev-icon-btn) ---------- */
+
+.deck-icon-btn {
+  aspect-ratio: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  padding: 0.5rem;
+  border: 0;
+  border-radius: 0.25rem;
+  background: transparent;
+  color: inherit;
+  font-size: 1.25rem;
+  opacity: 0.75;
+  cursor: pointer;
+  user-select: none;
+  outline: none;
+  vertical-align: middle;
+  transition: all 200ms ease-in-out;
+}
+
+.deck-icon-btn:hover {
+  opacity: 1;
+  background: rgba(156, 163, 175, 0.1);
+}
+
+.deck-icon-btn:focus-visible {
+  opacity: 1;
+  outline: 2px solid var(--deck-chrome-fg);
+  outline-offset: 2px;
+}
+
+.deck-icon-btn.shallow { opacity: 0.3; }
+.deck-icon-btn.active { opacity: 1; }
+.deck-icon-btn.disabled,
+.deck-icon-btn:disabled { opacity: 0.25; pointer-events: none; }
+
+.deck-icon-btn svg {
+  width: 1em;
+  height: 1em;
+  display: block;
+}
+
+.deck-icon-btn .sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.deck-divider {
+  width: 1px;
+  align-self: stretch;
+  margin: 0.25rem;
+  background: currentColor;
+  opacity: 0.1;
+}
+
+/* ---------- bottom-left nav bar ---------- */
+
+.deck-nav-wrapper {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  z-index: 50;
+  padding: 0.5rem;
+  opacity: 0;
+  transition: opacity 300ms ease;
+}
+
+.deck-nav-wrapper:hover,
+.deck-nav-wrapper:focus-within,
+.deck-nav-wrapper.persist {
+  opacity: 1;
+}
+
+.deck-controls {
+  display: flex;
+  flex-wrap: wrap-reverse;
+  align-items: center;
+  gap: 0.125rem;
+  padding: 0.25rem;
+  font-size: 1.25rem;
+  border-radius: 0.375rem;
+  background: var(--deck-chrome-bg);
+  border: 1px solid var(--deck-chrome-border);
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.3);
+}
+
+.deck-nav-wrapper.persist .deck-controls {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.deck-controls .deck-counter {
+  padding: 0 0.5rem;
+  margin: auto 0;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.deck-controls .deck-counter .current { font-size: 1.125rem; }
+.deck-controls .deck-counter .total { font-size: 0.875rem; opacity: 0.5; }
+
+/* brush color underline on the pen button */
+.deck-icon-btn .brush-underline {
+  position: absolute;
+  left: 0.25rem;
+  right: 0.25rem;
+  bottom: 0;
+  height: 0.175rem;
+  border-radius: 999px;
+}
+
+/* ---------- progress bar (play mode) ---------- */
+
+.deck-progress {
+  position: fixed;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  height: 3px;
+  z-index: 40;
+  pointer-events: none;
+}
+
+.deck-progress span {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--deck-primary);
+  opacity: 0.75;
+  transition: width 300ms ease;
+}
+
+/* ---------- overview grid ---------- */
+
+.deck-overview {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  overflow-y: auto;
+  padding: 4rem;
+  padding-top: 5rem;
+  padding-bottom: 5rem;
+  background: rgba(18, 18, 18, 0.75);
+  backdrop-filter: blur(5px);
+  user-select: none;
+  opacity: 1;
+  transition: opacity 150ms ease-out;
+}
+
+.deck-overview.closing,
+.deck-overview.opening {
+  opacity: 0;
+}
+
+.deck-overview[hidden] { display: none; }
+
+.deck-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 1rem 2rem;
+  width: 100%;
+}
+
+.deck-overview-item {
+  position: relative;
+}
+
+.deck-overview-card {
+  display: inline-block;
+  border: 1px solid var(--deck-chrome-border);
+  border-radius: 0.25rem;
+  overflow: hidden;
+  background: #ffffff;
+  cursor: pointer;
+  transition: border-color 200ms ease;
+}
+
+.deck-overview-card:hover,
+.deck-overview-item.is-current .deck-overview-card {
+  border-color: var(--deck-primary);
+}
+
+.deck-overview-no {
+  position: absolute;
+  top: 0;
+  opacity: 0.5;
+  font-size: 0.875rem;
+}
+
+.deck-overview-item.is-typed .deck-overview-no {
+  opacity: 1;
+  color: #4ade80;
+  font-weight: 700;
+}
+
+.deck-overview-close {
+  position: fixed;
+  top: 1rem;
+  right: 1rem;
+  z-index: 71;
+  color: #9ca3af;
+  font-size: 1.5rem;
+}
+
+/* scaled live thumbnail of a slide */
+.deck-thumb {
+  position: relative;
+  overflow: hidden;
+  background: #ffffff;
+}
+
+.deck-thumb .deck-thumb-stage {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1280px;
+  height: 720px;
+  transform-origin: top left;
+  pointer-events: none;
+  background: #ffffff;
+}
+
+.deck-thumb .slide {
+  position: absolute;
+  inset: 0;
+}
+
+/* overview thumbnails show the fully-revealed state; the presenter's
+   next-frame preview keeps real click visibility */
+.deck-thumb.reveal-all .click-hidden {
+  opacity: 1 !important;
+}
+
+/* ---------- goto dialog ---------- */
+
+.deck-goto {
+  position: fixed;
+  right: 1.25rem;
+  top: -5rem;
+  z-index: 70;
+  width: 22.5rem;
+  transition: top 200ms ease;
+}
+
+.deck-goto.open { top: 1.25rem; }
+
+.deck-goto-box {
+  padding: 0.5rem 1rem;
+  border-radius: 0.25rem;
+  border: 1px solid var(--deck-chrome-border);
+  background: var(--deck-chrome-bg);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+}
+
+.deck-goto input {
+  width: 100%;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+
+.deck-goto input.invalid { color: #f87171; }
+
+.deck-goto-list {
+  margin-top: 0.25rem;
+  max-height: calc(100vh - 100px);
+  overflow: auto;
+  border-radius: 0.25rem;
+  border: 1px solid var(--deck-chrome-border);
+  background: var(--deck-chrome-bg);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+}
+
+.deck-goto-list:empty { display: none; }
+
+.deck-goto-item {
+  display: flex;
+  gap: 0.75rem;
+  padding: 0.375rem 1rem;
+  cursor: pointer;
+  opacity: 0.8;
+  border-top: 1px solid var(--deck-chrome-border);
+}
+
+.deck-goto-item:first-child { border-top: 0; }
+
+.deck-goto-item:hover,
+.deck-goto-item.is-selected {
+  opacity: 1;
+  background: rgba(156, 163, 175, 0.1);
+}
+
+.deck-goto-item .no {
+  min-width: 1.5rem;
+  text-align: right;
+  opacity: 0.5;
+  font-size: 0.875rem;
+}
+
+/* ---------- drawing ---------- */
+
+.deck-drawing-svg {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  touch-action: none;
+}
+
+.deck-stage.drawing-enabled .deck-drawing-svg {
+  pointer-events: auto;
+  cursor: crosshair;
+}
+
+.deck-drawing-controls {
+  position: fixed;
+  top: 0.625rem;
+  left: 0.625rem;
+  z-index: 50;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.5rem;
+  font-size: 1.25rem;
+  border-radius: 0.375rem;
+  background: var(--deck-chrome-bg);
+  border: 1px solid var(--deck-chrome-border);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+  transition: opacity 200ms ease;
+}
+
+.deck-drawing-controls[hidden] { display: none; }
+
+.deck-drawing-controls .swatch {
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 50%;
+  border: 1px solid #ffffff;
+  transform: scale(0.85);
+  transition: all 200ms ease;
+}
+
+.deck-icon-btn.active .swatch {
+  border-radius: 0.375rem;
+  border-color: rgba(209, 213, 219, 0.5);
+  transform: scale(1);
+}
+
+.deck-size-pop {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  border-radius: 0.375rem;
+  background: var(--deck-chrome-bg);
+  border: 1px solid var(--deck-chrome-border);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+  font-size: 0.875rem;
+}
+
+.deck-size-pop[hidden] { display: none; }
+
+.deck-size-pop .value { width: 1.75rem; text-align: center; }
+
+/* ---------- laser pointer ---------- */
+
+.deck-laser {
+  position: absolute;
+  z-index: 15;
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  border-radius: 50%;
+  pointer-events: none;
+  background: radial-gradient(circle at center, rgba(255, 80, 80, 1) 0%, rgba(255, 0, 0, 0.95) 55%, rgba(255, 0, 0, 0.1) 100%);
+  box-shadow: 0 0 10px rgba(255, 0, 0, 0.9), 0 0 22px rgba(255, 0, 0, 0.55);
+}
+
+.deck-stage.laser-active { cursor: none; }
+
+/* ---------- presenter mode ---------- */
+
+body.presenter .deck-progress { display: none; }
+
+body.presenter .deck-nav-wrapper {
+  position: static;
+  padding: 0.25rem;
+}
+
+.deck-presenter {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  grid-template-rows: max-content 1fr;
+  background: var(--deck-chrome-bg);
+}
+
+.deck-presenter-progress {
+  position: relative;
+  display: flex;
+  gap: 1px;
+}
+
+.deck-presenter-progress .seg {
+  height: 4px;
+  border: 1px solid var(--deck-chrome-border);
+  border-top: 0;
+  transition: all 300ms ease;
+}
+
+.deck-presenter-progress .seg.past {
+  background: var(--deck-primary);
+  border-color: var(--deck-primary);
+}
+
+.deck-presenter-progress .seg .fill {
+  display: block;
+  height: 100%;
+  background: var(--deck-primary);
+  opacity: 0.75;
+  transition: width 300ms ease;
+}
+
+.deck-presenter-grid {
+  display: grid;
+  gap: 1px;
+  background: var(--deck-chrome-border);
+  overflow: hidden;
+  grid-template-columns: 1fr 1.1fr 24rem;
+  grid-template-rows: 1fr 1fr min-content;
+  grid-template-areas:
+    'main main next'
+    'main main note'
+    'bottom bottom bottom';
+}
+
+@media (max-aspect-ratio: 3/5) {
+  .deck-presenter-grid {
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr min-content 1fr min-content;
+    grid-template-areas: 'main' 'note' 'next' 'bottom';
+  }
+}
+
+.deck-presenter-grid > section {
+  background: var(--deck-chrome-bg);
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.deck-presenter-main { grid-area: main; padding: 1rem; }
+.deck-presenter-next { grid-area: next; padding: 1rem; }
+.deck-presenter-note { grid-area: note; display: flex; flex-direction: column; }
+.deck-presenter-bottom {
+  grid-area: bottom;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 0.5rem;
+}
+
+.deck-presenter-main .deck-viewport,
+.deck-presenter-next .deck-panel-stage {
+  position: absolute;
+  inset: 1rem;
+  display: grid;
+  place-items: center;
+}
+
+.deck-panel-label {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 2;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.875rem;
+  opacity: 0.5;
+  background: var(--deck-chrome-bg);
+  border-right: 1px solid var(--deck-chrome-border);
+  border-bottom: 1px solid var(--deck-chrome-border);
+}
+
+.deck-presenter-end {
+  display: grid;
+  place-items: center;
+  position: absolute;
+  inset: 0;
+  opacity: 0.5;
+}
+
+.deck-presenter-note .note-body {
+  flex: 1;
+  overflow: auto;
+  padding: 1rem;
+  font-size: 1.2em;
+  line-height: 1.6;
+}
+
+.deck-presenter-note .note-body.empty {
+  font-style: italic;
+  opacity: 0.5;
+}
+
+.deck-presenter-note .note-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0.25rem;
+  border-top: 1px solid var(--deck-chrome-border);
+}
+
+/* timer */
+.deck-timer {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  cursor: pointer;
+}
+
+.deck-timer .time {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 1.875rem;
+}
+
+.deck-timer.stopped .time { opacity: 0.5; }
+.deck-timer.running .time { color: #4ade80; }
+.deck-timer.paused .time { color: #93c5fd; }
+
+.deck-timer .timer-buttons { display: none; flex-direction: column; }
+.deck-timer:hover .timer-buttons { display: flex; }
+.deck-timer:hover .timer-idle-icon { display: none; }
+.deck-timer .timer-buttons .deck-icon-btn { font-size: 0.875rem; padding: 0.125rem; }

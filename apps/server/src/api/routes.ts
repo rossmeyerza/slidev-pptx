@@ -39,6 +39,7 @@ export function createApiRouter(
   const settings = new SettingsService(config);
   const adminTools = new AdminToolService(decks);
   const runtimeEvents = new RuntimeEventHub();
+  const runtimeShellDir = path.join(config.repoRoot, 'runtime');
   const router = new Router();
 
   router.add('GET', '/api/health', (_req, res) => {
@@ -535,6 +536,15 @@ export function createApiRouter(
     });
   });
 
+  const sendSharedDeckFile = async (res: ServerResponse, deck: DeckRecord, requestPath: string) => {
+    if (isCustomRuntimeDeck(deck)) {
+      await sendRuntimeFile(res, runtimeShellDir, decks.deckPath(deck.meta.id), requestPath);
+      return;
+    }
+    const outDir = await slidev.ensureBuilt(deck.meta.id, 'draft');
+    await sendSlidevStatic(res, outDir, requestPath);
+  };
+
   router.add('GET', '/share/:token', async (req, res) => {
     const access = await shareVisitorAccess(shares, req);
     if (sendShareVisitorGateIfNeeded(access, req, res)) return;
@@ -543,8 +553,7 @@ export function createApiRouter(
       sendHtml(res, shareEditWorkbenchHtml(req.params.token, deck.meta.title, access.visitor));
       return;
     }
-    const outDir = await slidev.ensureBuilt(deck.meta.id, 'draft');
-    await sendInlineFile(res, path.join(outDir, 'index.html'));
+    await sendSharedDeckFile(res, deck, 'index.html');
   });
 
   router.add('GET', '/share/:token/', async (req, res) => {
@@ -555,40 +564,35 @@ export function createApiRouter(
       sendHtml(res, shareEditWorkbenchHtml(req.params.token, deck.meta.title, access.visitor));
       return;
     }
-    const outDir = await slidev.ensureBuilt(deck.meta.id, 'draft');
-    await sendInlineFile(res, path.join(outDir, 'index.html'));
+    await sendSharedDeckFile(res, deck, 'index.html');
   });
 
   router.add('GET', '/share/:token/deck', async (req, res) => {
     const access = await shareVisitorAccess(shares, req);
     if (sendShareVisitorGateIfNeeded(access, req, res)) return;
     const deck = await shares.getSharedDeck(req.params.token);
-    const outDir = await slidev.ensureBuilt(deck.meta.id, 'draft');
-    await sendInlineFile(res, path.join(outDir, 'index.html'));
+    await sendSharedDeckFile(res, deck, 'index.html');
   });
 
   router.add('GET', '/share/:token/deck/', async (req, res) => {
     const access = await shareVisitorAccess(shares, req);
     if (sendShareVisitorGateIfNeeded(access, req, res)) return;
     const deck = await shares.getSharedDeck(req.params.token);
-    const outDir = await slidev.ensureBuilt(deck.meta.id, 'draft');
-    await sendInlineFile(res, path.join(outDir, 'index.html'));
+    await sendSharedDeckFile(res, deck, 'index.html');
   });
 
   router.add('GET', '/share/:token/deck/*path', async (req, res) => {
     const access = await shareVisitorAccess(shares, req);
     if (sendShareVisitorGateIfNeeded(access, req, res)) return;
     const deck = await shares.getSharedDeck(req.params.token);
-    const outDir = await slidev.ensureBuilt(deck.meta.id, 'draft');
-    await sendSlidevStatic(res, outDir, req.params.path);
+    await sendSharedDeckFile(res, deck, req.params.path);
   });
 
   router.add('GET', '/share/:token/*path', async (req, res) => {
     const access = await shareVisitorAccess(shares, req);
     if (sendShareVisitorGateIfNeeded(access, req, res)) return;
     const deck = await shares.getSharedDeck(req.params.token);
-    const outDir = await slidev.ensureBuilt(deck.meta.id, 'draft');
-    await sendSlidevStatic(res, outDir, req.params.path);
+    await sendSharedDeckFile(res, deck, req.params.path);
   });
 
   router.add('POST', '/api/decks/:id/publish', async (req, res) => {
@@ -677,13 +681,13 @@ export function createApiRouter(
   router.add('GET', '/runtime/:id/', async (req, res) => {
     const context = await auth.requireUser(req);
     await requireDeckAccess(decks, collaborators, req.params.id, context.user, 'view');
-    await sendRuntimeFile(res, decks.deckPath(req.params.id), 'index.html');
+    await sendRuntimeFile(res, runtimeShellDir, decks.deckPath(req.params.id), 'index.html');
   });
 
   router.add('GET', '/runtime/:id/*path', async (req, res) => {
     const context = await auth.requireUser(req);
     await requireDeckAccess(decks, collaborators, req.params.id, context.user, 'view');
-    await sendRuntimeFile(res, decks.deckPath(req.params.id), runtimeRequestPath(req.params.path));
+    await sendRuntimeFile(res, runtimeShellDir, decks.deckPath(req.params.id), runtimeRequestPath(req.params.path));
   });
 
   router.add('GET', '/published/:id', async (req, res) => {
@@ -820,6 +824,20 @@ function sendShareVisitorGateIfNeeded(access: ShareVisitorAccess, req: JsonReque
   return true;
 }
 
+/** Token skin shared with the React app (see apps/web/src/styles.css) so
+ *  server-rendered share pages match the product chrome. */
+const SHARE_CHROME_CSS = `
+  body { font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif; background: #eef0f2; }
+  .btn-primary { --bs-btn-bg: #17809f; --bs-btn-border-color: #17809f; --bs-btn-hover-bg: #126a85; --bs-btn-hover-border-color: #126a85; --bs-btn-active-bg: #126a85; --bs-btn-active-border-color: #126a85; --bs-btn-disabled-bg: #17809f; --bs-btn-disabled-border-color: #17809f; }
+  :root { --bs-link-color-rgb: 23, 128, 159; --bs-link-hover-color-rgb: 18, 106, 133; --bs-primary-rgb: 23, 128, 159; }
+  .card { --bs-card-border-color: #dfe3e8; --bs-card-cap-bg: transparent; }
+  body.share-gate { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 1.5rem; background: radial-gradient(50rem 30rem at 85% -10%, rgba(58, 185, 213, 0.14), transparent 60%), #14181d; }
+  body.share-gate main { width: 100%; }
+  body.share-gate .card { border: 0; overflow: hidden; }
+  body.share-gate .card-header { background: #1b2129; color: #c6cdd5; border-bottom: 1px solid rgba(255, 255, 255, 0.08); padding: 1.25rem 1.5rem; }
+  body.share-gate .card-header h1 { color: #fff; }
+`;
+
 function sharePasswordGateHtml(token: string, name: string): string {
   const shareUrl = `/share/${encodeURIComponent(token)}/#/1`;
   return `<!doctype html>
@@ -829,8 +847,9 @@ function sharePasswordGateHtml(token: string, name: string): string {
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Share password required</title>
     <link rel="stylesheet" href="/vendor/halfmoon/halfmoon.min.css">
+    <style>${SHARE_CHROME_CSS}</style>
   </head>
-  <body>
+  <body class="share-gate">
     <main class="container py-5">
       <section class="card shadow-sm col-12 col-lg-5 mx-auto">
         <div class="card-header">
@@ -880,8 +899,9 @@ function shareVisitorGateHtml(token: string, name: string, email: string): strin
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Identify yourself</title>
     <link rel="stylesheet" href="/vendor/halfmoon/halfmoon.min.css">
+    <style>${SHARE_CHROME_CSS}</style>
   </head>
-  <body>
+  <body class="share-gate">
     <main class="container py-5">
       <section class="card shadow-sm col-12 col-lg-5 mx-auto">
         <div class="card-header">
@@ -936,6 +956,7 @@ function shareEditWorkbenchHtml(token: string, title: string, visitor: ShareVisi
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>${escapeHtml(title)} client workbench</title>
     <link rel="stylesheet" href="/vendor/halfmoon/halfmoon.min.css">
+    <style>${SHARE_CHROME_CSS}</style>
   </head>
   <body>
     <main class="container-fluid py-3">
@@ -1449,10 +1470,19 @@ async function sendSlidevStatic(res: Parameters<typeof sendInlineFile>[0], outDi
   }
 }
 
-async function sendRuntimeFile(res: Parameters<typeof sendInlineFile>[0], deckDir: string, requestPath: string): Promise<void> {
+/** Shell files are always served from the canonical runtime dir so every deck
+ *  (including ones created before a shell upgrade) runs the latest runtime.
+ *  Deck folders still carry stamped copies for self-contained export. */
+const RUNTIME_SHELL_FILES = new Set(['index.html', 'runtime.js', 'runtime.css']);
+
+async function sendRuntimeFile(res: Parameters<typeof sendInlineFile>[0], shellDir: string, deckDir: string, requestPath: string): Promise<void> {
   const normalized = runtimeRequestPath(requestPath);
   if (!isAllowedRuntimeAsset(normalized)) {
     throw Object.assign(new Error('Runtime asset is not allowed'), { statusCode: 404 });
+  }
+  if (RUNTIME_SHELL_FILES.has(normalized)) {
+    await sendInlineFile(res, path.join(shellDir, normalized));
+    return;
   }
   await sendInlineFile(res, safeStaticPath(deckDir, normalized));
 }

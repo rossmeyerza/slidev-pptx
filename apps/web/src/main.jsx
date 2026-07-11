@@ -5,6 +5,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import 'bootstrap/js/dist/offcanvas';
 import 'bootstrap/js/dist/dropdown';
 import 'bootstrap/js/dist/toast';
+import '@fontsource-variable/inter';
+import '@fontsource-variable/space-grotesk';
 import { App } from './App.jsx';
 import './styles.css';
 

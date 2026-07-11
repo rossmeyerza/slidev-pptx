@@ -121,7 +121,10 @@ export class DeckStore {
 
     await fs.cp(this.scaffoldDir(scaffoldKey), this.deckDir(id), { recursive: true, force: false });
     await this.linkRuntimeDependencies(id);
-    if (isHtmlRuntime) await this.applyDeckManifestTitle(id, title);
+    if (isHtmlRuntime) {
+      await this.stampRuntimeShell(id);
+      await this.applyDeckManifestTitle(id, title);
+    }
     await writeText(this.deckFile(id), markdown);
     if (this.pool) await this.insertMeta(meta, input.ownerUserId ?? 'system');
     else await writeJson(this.metaFile(id), meta);
@@ -455,6 +458,20 @@ export class DeckStore {
       return true;
     } catch {
       return false;
+    }
+  }
+
+  /**
+   * Copies the canonical runtime shell into the deck folder. Serving always
+   * uses the canonical copy (`runtime/` at the repo root); the stamped files
+   * keep deck folders self-contained for export and offline viewing.
+   */
+  private async stampRuntimeShell(id: string): Promise<void> {
+    const shellDir = path.join(this.config.repoRoot, 'runtime');
+    for (const name of ['index.html', 'runtime.js', 'runtime.css']) {
+      await fs.copyFile(path.join(shellDir, name), path.join(this.deckDir(id), name)).catch((error) => {
+        if (!isNodeErrorCode(error, 'ENOENT')) throw error;
+      });
     }
   }
 

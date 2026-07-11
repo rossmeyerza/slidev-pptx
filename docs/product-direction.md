@@ -53,15 +53,22 @@ pixel-perfect download — a feature, not the core product.
 1. **Consolidation (done 2026-07-02).** Checkpoint commit; removed dead vanilla
    frontend, orphaned packages, pnpm config, preview supervisor + `/live`
    proxy, editable/hybrid export modes; docs rewritten to this direction.
-2. **Deck runtime promotion.** Make the custom-html format first-class:
-   `deck.json` manifest, per-slide HTML files, keyboard nav + slide index in
-   the runtime shell, 2–3 branded scaffolds mined from
-   `themes/commercial-profile`, and a written slide-authoring convention for
-   the LLM. New decks default to the HTML runtime.
+2. **Deck runtime promotion (done 2026-07-03, UI parity 2026-07-11).** The
+   custom-html format is first-class: `deck.json` manifest, per-slide HTML
+   files, branded scaffolds, and a written authoring convention
+   (`docs/deck-authoring.md`). The runtime shell now ships Slidev-parity
+   presentation UI reimplemented in vanilla JS (icon nav bar, thumbnail
+   overview, goto, click/build steps, slide transitions, presenter mode with
+   notes/timer/sync, drawing + laser). The shell lives canonically in
+   `runtime/` at the repo root and is always served from there — deck folders
+   carry stamped copies purely for self-containment, so shell upgrades reach
+   every existing deck immediately.
 3. **Wire the loop.** Agent prompts teach the runtime conventions; workbench
    preview reloads on file writes (the `/api/decks/:id/runtime/events` SSE hub
    already exists); exporter screenshots the runtime directly instead of
-   spawning Slidev; share links verified against the runtime.
+   spawning Slidev (the `window.__deck` hook reveals all click steps and skips
+   transitions); share links serve the runtime for HTML decks (done
+   2026-07-11 — Slidev decks still fall back to the static draft build).
 4. **Ship v1.** Gate the dev-link auth fallback behind an env flag, refresh the
    smoke suite for the new paths, migrate or archive remaining Slidev decks,
    then remove the transitional Slidev build/preview code and dependencies.

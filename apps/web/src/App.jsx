@@ -52,6 +52,16 @@ export function App() {
   const [view, setView] = useState('dashboard');
   const [selectedDeckId, setSelectedDeckId] = useState('');
   const [exportJobs, setExportJobs] = useState({});
+  const [theme, setTheme] = useState(() => {
+    try { return localStorage.getItem('slidev-agent-theme') ?? 'light'; } catch { return 'light'; }
+  });
+
+  const toggleTheme = () => {
+    const next = theme === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-bs-theme', next);
+    setTheme(next);
+    try { localStorage.setItem('slidev-agent-theme', next); } catch {}
+  };
 
   const session = useQuery({
     queryKey: queryKeys.session,
@@ -157,10 +167,25 @@ export function App() {
         }}
       />
 
-      <main className="app-main container-fluid">
-        <button type="button" data-bs-toggle="offcanvas" data-bs-target="#workspace-sidebar" className="btn btn-outline-secondary mb-3" aria-label="Open sidebar">
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path fillRule="evenodd" d="M2.5 12a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5m0-4a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5m0-4a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5" /></svg>
+      <header className="app-topbar">
+        <button type="button" data-bs-toggle="offcanvas" data-bs-target="#workspace-sidebar" className="btn btn-sm btn-ghost-inverse d-inline-flex align-items-center" aria-label="Open sidebar">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path fillRule="evenodd" d="M2.5 12a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5m0-4a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5m0-4a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5" /></svg>
         </button>
+        <a className="app-brand" href="#" onClick={(event) => { event.preventDefault(); setView('dashboard'); }}>
+          <span className="brand-mark" aria-hidden="true">S</span>
+          Slidev Agent
+        </a>
+        <span className="topbar-context">{topbarContext(view, selectedDeck)}</span>
+        <button type="button" className="btn btn-sm btn-ghost-inverse ms-auto d-inline-flex align-items-center" onClick={toggleTheme} aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'} title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}>
+          {theme === 'dark' ? (
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 11a3 3 0 1 1 0-6 3 3 0 0 1 0 6m0 1a4 4 0 1 0 0-8 4 4 0 0 0 0 8M8 0a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-1 0v-2A.5.5 0 0 1 8 0m0 13a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-1 0v-2A.5.5 0 0 1 8 13m8-5a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1 0-1h2a.5.5 0 0 1 .5.5M3 8a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1 0-1h2A.5.5 0 0 1 3 8m10.657-5.657a.5.5 0 0 1 0 .707l-1.414 1.415a.5.5 0 1 1-.707-.708l1.414-1.414a.5.5 0 0 1 .707 0m-9.193 9.193a.5.5 0 0 1 0 .707L3.05 13.657a.5.5 0 0 1-.707-.707l1.414-1.414a.5.5 0 0 1 .707 0m9.193 2.121a.5.5 0 0 1-.707 0l-1.414-1.414a.5.5 0 0 1 .707-.707l1.414 1.414a.5.5 0 0 1 0 .707M3.757 6.464a.5.5 0 0 1-.707 0L1.636 5.05a.5.5 0 0 1 .707-.707l1.414 1.414a.5.5 0 0 1 0 .707" /></svg>
+          ) : (
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 .278a.77.77 0 0 1 .08.858 7.2 7.2 0 0 0-.878 3.46c0 4.021 3.278 7.277 7.318 7.277q.792-.001 1.533-.16a.79.79 0 0 1 .81.316.73.73 0 0 1-.031.893A8.35 8.35 0 0 1 8.344 16C3.734 16 0 12.286 0 7.71 0 4.266 2.114 1.312 5.124.06A.75.75 0 0 1 6 .278M4.858 1.311A7.27 7.27 0 0 0 1.025 7.71c0 4.02 3.279 7.276 7.319 7.276a7.32 7.32 0 0 0 5.205-2.162q-.506.063-1.029.063c-4.61 0-8.343-3.714-8.343-8.29 0-1.167.242-2.278.681-3.286" /></svg>
+          )}
+        </button>
+      </header>
+
+      <main className="app-main">
         <ToastHost toast={toast} onClose={() => setToast(null)} />
 
         {view === 'dashboard' ? (
@@ -313,14 +338,14 @@ function AuthScreen({ loading = false, hasUsers = true, notice = '', onLogin, on
   const [busy, setBusy] = useState(false);
 
   return (
-    <section className="min-vh-100 d-flex align-items-center justify-content-center p-4">
-      <div className="card shadow-sm col-12 col-sm-10 col-md-6 col-lg-4">
-        <div className="card-body p-4">
-        <div className="mb-4">
-          <span className="badge text-bg-primary rounded-1 fs-6 py-2 px-3 mb-3" aria-hidden="true">S</span>
-          <h1 className="h3 mb-2">Slidev Agent</h1>
-          <p className="text-body-secondary mb-0">Sign in to access internal decks, templates, exports, and admin tools.</p>
+    <section className="auth-shell" data-bs-theme="light">
+      <div className="card auth-card overflow-hidden shadow">
+        <div className="card-header">
+          <span className="brand-mark mb-3" style={{ width: '2rem', height: '2rem', fontSize: '1rem' }} aria-hidden="true">S</span>
+          <h1 className="h4 mb-1">Slidev Agent</h1>
+          <p className="mb-0 small" style={{ color: 'var(--ink-text-muted)' }}>Chat with the agent, shape client decks, share them with a link.</p>
         </div>
+        <div className="card-body p-4">
         {notice ? <section className="alert alert-warning" role="alert">{notice}</section> : null}
         {loading ? <p className="text-body-secondary">Checking session...</p> : null}
 
@@ -474,9 +499,9 @@ function ShareClient({ token }) {
   const canEdit = share?.permission === 'edit' && shareQuery.data?.visitor;
   return (
     <main className="share-client-shell">
-      <div className="d-flex flex-wrap align-items-start justify-content-between gap-3 mb-3">
+      <div className="d-flex flex-wrap align-items-start justify-content-between gap-3 mb-4">
         <div>
-          <p className="text-body-secondary small mb-1">{canEdit ? `Editing as ${shareQuery.data.visitor.name}` : 'Shared view'}</p>
+          <p className="page-eyebrow mb-1">{canEdit ? `Editing as ${shareQuery.data.visitor.name}` : 'Shared view'}</p>
           <h1 className="h3 mb-0">{title}</h1>
         </div>
         <div className="btn-toolbar gap-2">
@@ -537,8 +562,8 @@ function ShareClient({ token }) {
 
 function CenteredPanel({ title, subtitle, children = null, tone = 'secondary' }) {
   return (
-    <section className="min-vh-100 d-flex align-items-center justify-content-center p-4">
-      <div className="card shadow-sm col-12 col-sm-10 col-md-6 col-lg-4">
+    <section className="auth-shell" data-bs-theme="light">
+      <div className="card auth-card shadow">
         <div className="card-body p-4">
         <h1 className="h4 mb-2">{title}</h1>
         <p className={`text-${tone === 'danger' ? 'danger' : 'body-secondary'} mb-4`}>{subtitle}</p>
@@ -574,9 +599,6 @@ function ToastHost({ toast, onClose }) {
 
 function Sidebar({ user, decks, selectedDeckId, activeView, onSelectDeck, onView, onLogout }) {
   const [query, setQuery] = useState('');
-  const [theme, setTheme] = useState(() => {
-    try { return localStorage.getItem('slidev-agent-theme') ?? 'light'; } catch { return 'light'; }
-  });
   const filteredDecks = useMemo(
     () => decks.filter((deck) => !query || deck.title.toLowerCase().includes(query.toLowerCase())),
     [decks, query],
@@ -586,20 +608,13 @@ function Sidebar({ user, decks, selectedDeckId, activeView, onSelectDeck, onView
     'data-bs-target': '#workspace-sidebar',
   };
 
-  const toggleTheme = () => {
-    const next = theme === 'dark' ? 'light' : 'dark';
-    document.documentElement.setAttribute('data-bs-theme', next);
-    setTheme(next);
-    try { localStorage.setItem('slidev-agent-theme', next); } catch {}
-  };
-
   const initial = (user.name ?? user.email ?? '?')[0].toUpperCase();
 
   return (
     <nav className="workspace-sidebar offcanvas offcanvas-start" tabIndex="-1" id="workspace-sidebar" aria-label="Workspace navigation">
-      <div className="offcanvas-header border-bottom border-secondary border-opacity-25">
+      <div className="offcanvas-header border-bottom">
         <a className="sidebar-brand" href="#" onClick={(event) => { event.preventDefault(); onView('dashboard'); }}>
-          <span className="badge text-bg-primary rounded-1 me-2" aria-hidden="true">S</span>
+          <span className="brand-mark" aria-hidden="true">S</span>
           Slidev Agent
         </a>
         <button type="button" className="btn-close" data-bs-dismiss="offcanvas" aria-label="Close" data-bs-target="#workspace-sidebar"></button>
@@ -644,8 +659,11 @@ function Sidebar({ user, decks, selectedDeckId, activeView, onSelectDeck, onView
           {filteredDecks.length ? filteredDecks.map((deck) => (
             <li className="nav-item" key={deck.id}>
               <button {...drawerDismissAttrs} type="button" className={`nav-link w-100 text-start ${deck.id === selectedDeckId ? 'active' : ''}`} onClick={() => onSelectDeck(deck.id)}>
-                <strong className="d-block text-truncate">{deck.title}</strong>
-                <span className="d-block small text-body-secondary">{deck.status} · {formatDate(deck.updatedAt)}</span>
+                <span className="d-flex align-items-center gap-2">
+                  <span className={`status-dot ${deckStatusDot(deck)}`} aria-hidden="true"></span>
+                  <strong className="text-truncate">{deck.title}</strong>
+                </span>
+                <span className="d-block small text-body-secondary ps-4">{deck.status} · {formatDate(deck.updatedAt)}</span>
               </button>
             </li>
           )) : <li className="text-body-secondary small px-3 py-2">No decks found.</li>}
@@ -662,16 +680,6 @@ function Sidebar({ user, decks, selectedDeckId, activeView, onSelectDeck, onView
               <button {...drawerDismissAttrs} className="dropdown-item d-flex align-items-center gap-2" type="button" onClick={() => {}}>
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6m2-3a2 2 0 1 1-4 0 2 2 0 0 1 4 0m4 8c0 1-1 1-1 1H3s-1 0-1-1 1-4 6-4 6 3 6 4m-1-.004c-.001-.246-.154-.986-.832-1.664C11.516 10.68 10.289 10 8 10s-3.516.68-4.168 1.332c-.678.678-.83 1.418-.832 1.664z" /></svg>
                 Profile
-              </button>
-            </li>
-            <li>
-              <button className="dropdown-item d-flex align-items-center gap-2" type="button" onClick={toggleTheme}>
-                {theme === 'dark' ? (
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 11a3 3 0 1 1 0-6 3 3 0 0 1 0 6m0 1a4 4 0 1 0 0-8 4 4 0 0 0 0 8M8 0a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-1 0v-2A.5.5 0 0 1 8 0m0 13a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-1 0v-2A.5.5 0 0 1 8 13m8-5a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1 0-1h2a.5.5 0 0 1 .5.5M3 8a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1 0-1h2A.5.5 0 0 1 3 8m10.657-5.657a.5.5 0 0 1 0 .707l-1.414 1.415a.5.5 0 1 1-.707-.708l1.414-1.414a.5.5 0 0 1 .707 0m-9.193 9.193a.5.5 0 0 1 0 .707L3.05 13.657a.5.5 0 0 1-.707-.707l1.414-1.414a.5.5 0 0 1 .707 0m9.193 2.121a.5.5 0 0 1-.707 0l-1.414-1.414a.5.5 0 0 1 .707-.707l1.414 1.414a.5.5 0 0 1 0 .707M3.757 6.464a.5.5 0 0 1-.707 0L1.636 5.05a.5.5 0 0 1 .707-.707l1.414 1.414a.5.5 0 0 1 0 .707" /></svg>
-                ) : (
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 .278a.77.77 0 0 1 .08.858 7.2 7.2 0 0 0-.878 3.46c0 4.021 3.278 7.277 7.318 7.277q.792-.001 1.533-.16a.79.79 0 0 1 .81.316.73.73 0 0 1-.031.893A8.35 8.35 0 0 1 8.344 16C3.734 16 0 12.286 0 7.71 0 4.266 2.114 1.312 5.124.06A.75.75 0 0 1 6 .278M4.858 1.311A7.27 7.27 0 0 0 1.025 7.71c0 4.02 3.279 7.276 7.319 7.276a7.32 7.32 0 0 0 5.205-2.162q-.506.063-1.029.063c-4.61 0-8.343-3.714-8.343-8.29 0-1.167.242-2.278.681-3.286" /></svg>
-                )}
-                {theme === 'dark' ? 'Light mode' : 'Dark mode'}
               </button>
             </li>
             <li><hr className="dropdown-divider" /></li>
@@ -704,9 +712,9 @@ function DeckDashboard({ user, decks, scaffolds, loading, onSelectDeck, onCreate
 
   return (
     <section>
-      <div className="d-flex flex-wrap align-items-start justify-content-between gap-3 mb-3">
+      <div className="d-flex flex-wrap align-items-start justify-content-between gap-3 mb-4">
         <div>
-          <p className="text-body-secondary small mb-1">{user?.role === 'admin' ? 'Admin workspace' : 'Workspace'}</p>
+          <p className="page-eyebrow mb-1">{user?.role === 'admin' ? 'Admin workspace' : 'Workspace'}</p>
           <h2 className="h3 mb-0">{user?.role === 'admin' ? 'Deck operations' : 'My decks'}</h2>
         </div>
       </div>
@@ -714,6 +722,10 @@ function DeckDashboard({ user, decks, scaffolds, loading, onSelectDeck, onCreate
       <DashboardSummary user={user} decks={decks} scaffolds={scaffolds} />
 
       <div className="card shadow-sm mb-3">
+        <div className="card-header">
+          <h3 className="h5 mb-1">Start a deck</h3>
+          <p className="text-body-secondary small mb-0">The agent drafts the first version from your template and brief.</p>
+        </div>
         <div className="card-body">
           <form
             className="row g-3 align-items-end"
@@ -804,18 +816,20 @@ function DeckDashboard({ user, decks, scaffolds, loading, onSelectDeck, onCreate
         {!loading && !decks.length ? <div className="card shadow-sm"><div className="card-body text-body-secondary">No decks yet. Create one from the scaffold.</div></div> : null}
         {recentDecks.map((deck) => (
           <article className="card shadow-sm deck-card" key={deck.id}>
-            <div className="card-body">
-              <div className="d-flex align-items-start justify-content-between gap-2 mb-2">
-                <h3 className="h5 mb-0">{deck.title}</h3>
-                <span className="badge text-bg-secondary">{deck.status}</span>
+            <div className="card-body d-flex flex-column">
+              <div className="d-flex align-items-center gap-2 mb-1">
+                <span className={`status-dot ${deckStatusDot(deck)}`} aria-hidden="true"></span>
+                <span className="text-body-secondary small text-capitalize">{deck.status}</span>
               </div>
+              <h3 className="h5 mb-1">
+                <button className="btn btn-link p-0 text-start text-body text-decoration-none stretched-link h5 mb-0" type="button" onClick={() => onSelectDeck(deck.id)}>{deck.title}</button>
+              </h3>
               <p className="text-body-secondary small mb-2">Updated {formatDate(deck.updatedAt)}</p>
-              <div className="d-flex flex-wrap gap-2 mb-3">
-                {deck.shares?.length ? <span className="badge text-bg-light">{deck.shares.length} client link{deck.shares.length === 1 ? '' : 's'}</span> : null}
+              <div className="d-flex flex-wrap gap-2 mt-auto">
+                {deck.shares?.length ? <span className="badge text-bg-light border">{deck.shares.length} client link{deck.shares.length === 1 ? '' : 's'}</span> : null}
                 {deck.activeEditorUserId ? <span className="badge text-bg-warning">Locked</span> : null}
                 {deck.pptx?.status ? <span className={`badge ${exportStatusClass(deck.pptx.status)}`}>PPTX {formatExportStatus(deck.pptx.status)}</span> : null}
               </div>
-              <button className="btn btn-outline-primary btn-sm" type="button" onClick={() => onSelectDeck(deck.id)}>Open deck</button>
             </div>
           </article>
         ))}
@@ -829,34 +843,26 @@ function DashboardSummary({ user, decks, scaffolds }) {
   const stats = dashboardStats(decks, scaffolds);
   const admin = user?.role === 'admin';
   return (
-    <section className="dashboard-summary mb-3" aria-label="Workspace summary">
-      <article className="card shadow-sm">
-        <div className="card-body">
-          <span className="text-body-secondary small text-uppercase fw-semibold">{admin ? 'Workspace decks' : 'Visible decks'}</span>
-          <div className="summary-value">{stats.totalDecks}</div>
-          <p className="text-body-secondary small mb-0">{stats.publishedDecks} published · {stats.draftDecks} draft</p>
-        </div>
+    <section className="dashboard-summary mb-4" aria-label="Workspace summary">
+      <article>
+        <span className="page-eyebrow">{admin ? 'Workspace decks' : 'Visible decks'}</span>
+        <div className="summary-value">{stats.totalDecks}</div>
+        <p className="text-body-secondary small mb-0">{stats.publishedDecks} published · {stats.draftDecks} draft</p>
       </article>
-      <article className="card shadow-sm">
-        <div className="card-body">
-          <span className="text-body-secondary small text-uppercase fw-semibold">{admin ? 'Client exposure' : 'Client links'}</span>
-          <div className="summary-value">{stats.shareLinks}</div>
-          <p className="text-body-secondary small mb-0">{stats.editLinks} editable · {stats.passwordLinks} password protected</p>
-        </div>
+      <article>
+        <span className="page-eyebrow">{admin ? 'Client exposure' : 'Client links'}</span>
+        <div className="summary-value">{stats.shareLinks}</div>
+        <p className="text-body-secondary small mb-0">{stats.editLinks} editable · {stats.passwordLinks} password protected</p>
       </article>
-      <article className="card shadow-sm">
-        <div className="card-body">
-          <span className="text-body-secondary small text-uppercase fw-semibold">{admin ? 'Operations' : 'In progress'}</span>
-          <div className="summary-value">{admin ? stats.lockedDecks : stats.exportingDecks}</div>
-          <p className="text-body-secondary small mb-0">{admin ? `${stats.exportingDecks} exporting · ${stats.failedExports} failed exports` : `${stats.lockedDecks} locked · ${stats.failedExports} failed exports`}</p>
-        </div>
+      <article>
+        <span className="page-eyebrow">{admin ? 'Operations' : 'In progress'}</span>
+        <div className="summary-value">{admin ? stats.lockedDecks : stats.exportingDecks}</div>
+        <p className="text-body-secondary small mb-0">{admin ? `${stats.exportingDecks} exporting · ${stats.failedExports} failed exports` : `${stats.lockedDecks} locked · ${stats.failedExports} failed exports`}</p>
       </article>
-      <article className="card shadow-sm">
-        <div className="card-body">
-          <span className="text-body-secondary small text-uppercase fw-semibold">Templates</span>
-          <div className="summary-value">{stats.activeTemplates}</div>
-          <p className="text-body-secondary small mb-0">{stats.adminTemplates} admin-only · {stats.defaultTemplate || 'No default'} default</p>
-        </div>
+      <article>
+        <span className="page-eyebrow">Templates</span>
+        <div className="summary-value">{stats.activeTemplates}</div>
+        <p className="text-body-secondary small mb-0">{stats.adminTemplates} admin-only · {stats.defaultTemplate || 'No default'} default</p>
       </article>
     </section>
   );
@@ -887,11 +893,14 @@ function DeckDetail({ deck, currentUser, loading, exportJob, onWork, onPublish, 
 
   return (
     <section>
-      <div className="d-flex flex-wrap align-items-start justify-content-between gap-3 mb-3">
+      <div className="d-flex flex-wrap align-items-start justify-content-between gap-3 mb-4">
         <div>
-          <p className="text-body-secondary small mb-1">{deck.status} · Updated {formatDate(deck.updatedAt)}</p>
-          <h2 className="h3 mb-0">{deck.title}</h2>
-          <p className="text-body-secondary mb-0">{deck.owner} · {deck.id}</p>
+          <p className="page-eyebrow mb-1 d-flex align-items-center gap-2">
+            <span className={`status-dot ${deckStatusDot(deck)}`} aria-hidden="true"></span>
+            {deck.status} · Updated {formatDate(deck.updatedAt)}
+          </p>
+          <h2 className="h3 mb-1">{deck.title}</h2>
+          <p className="text-body-secondary small mb-0">{deck.owner} · <span className="text-mono">{deck.id}</span></p>
         </div>
         <div className="btn-toolbar gap-2" role="toolbar" aria-label="Deck actions">
           <button className="btn btn-primary" type="button" onClick={onWork}>Work on this</button>
@@ -1214,9 +1223,9 @@ function Workbench({ deck, currentUser, onBack, onSend, onCancel }) {
 
   return (
     <section>
-      <div className="d-flex flex-wrap align-items-start justify-content-between gap-3 mb-3">
+      <div className="d-flex flex-wrap align-items-start justify-content-between gap-3 mb-4">
         <div>
-          <p className="text-body-secondary small mb-1">Working deck</p>
+          <p className="page-eyebrow mb-1">Workbench</p>
           <h2 className="h3 mb-0">{deck.title}</h2>
         </div>
         <button className="btn btn-outline-secondary" type="button" onClick={onBack}>Back to deck</button>
@@ -1240,9 +1249,9 @@ function Workbench({ deck, currentUser, onBack, onSend, onCancel }) {
           <div className="card-header"><h3 className="h5 mb-0">Chat</h3></div>
           <div className="card-body border-bottom instruction-stream">
             {(deck.messages?.length ? deck.messages : [{ role: 'agent', content: 'Ready for instructions.' }]).map((message, index) => (
-              <article className={`card message${message.role === 'user' ? ' is-user border-primary-subtle bg-primary-subtle' : ''}`} key={`${message.role}-${index}`}>
-                <b className="card-header py-2 small text-uppercase text-body-secondary">{message.role === 'user' ? 'You' : 'Agent'}</b>
-                <p className="card-body mb-0 py-2">{message.content}</p>
+              <article className={`chat-msg ${message.role === 'user' ? 'is-user' : 'is-agent'}`} key={`${message.role}-${index}`}>
+                <span className="chat-role">{message.role === 'user' ? 'You' : 'Agent'}</span>
+                {message.content}
               </article>
             ))}
           </div>
@@ -1326,7 +1335,8 @@ function PreviewFrame({ src, workbench = false, reloadToken = 0 }) {
 function TemplatesView({ scaffolds, loading }) {
   return (
     <section>
-      <h2 className="h3 mb-3">Templates</h2>
+      <p className="page-eyebrow mb-1">Workspace</p>
+      <h2 className="h3 mb-4">Templates</h2>
       <div className="row g-3">
         {loading ? <div className="col-12"><div className="card shadow-sm"><div className="card-body text-body-secondary">Loading templates...</div></div></div> : null}
         {!loading && !scaffolds.length ? <div className="col-12"><div className="card shadow-sm"><div className="card-body text-body-secondary">No templates found.</div></div></div> : null}
@@ -1368,8 +1378,8 @@ function AdminView({ scaffolds, onInvite, onSettingsSaved }) {
   });
   return (
     <section>
-      <p className="text-body-secondary small mb-1">Admin</p>
-      <h2 className="h3 mb-3">Users</h2>
+      <p className="page-eyebrow mb-1">Admin</p>
+      <h2 className="h3 mb-4">Users</h2>
       {status ? <section className="alert alert-info py-2" role="status">{status}</section> : null}
       <div className="card shadow-sm">
         <div className="card-body">
@@ -1771,4 +1781,17 @@ function isCustomRuntimeDeck(deck) {
 function clientShareTokenFromPath(pathname) {
   const match = pathname.match(/^\/client\/([^/]+)/);
   return match ? decodeURIComponent(match[1]) : '';
+}
+
+function topbarContext(view, deck) {
+  if (view === 'templates') return 'Templates';
+  if (view === 'admin') return 'Admin';
+  if ((view === 'detail' || view === 'workbench') && deck) return deck.title;
+  return 'Decks';
+}
+
+function deckStatusDot(deck) {
+  const exporting = ['queued', 'running'].includes(String(deck.pptx?.status ?? '').toLowerCase());
+  if (exporting) return 'is-busy';
+  return deck.status === 'published' ? 'is-published' : 'is-draft';
 }

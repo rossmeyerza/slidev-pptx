@@ -1,6 +1,7 @@
 {
   "title": "Untitled deck",
   "theme": "theme.css",
+  "transition": "slide",
   "slides": [
     "slides/01-title.html",
     "slides/02-overview.html",
