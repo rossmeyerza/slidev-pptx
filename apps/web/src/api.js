@@ -8,7 +8,7 @@ import { betterAuthSignOut, getBetterAuthSession, requestBetterAuthMagicLink } f
  * @typedef {{ id:string, deckId:string, userId:string, role:'editor'|'viewer', createdAt:string, user?:User }} Collaborator
  * @typedef {{ key:string, name:string, description:string, thumbnailUrl?:string, isDefault:boolean, isActive?:boolean, minRole?:'admin'|'employee' }} Scaffold
  * @typedef {{ id:string, url:string, name:string, email:string, permission?:'view'|'edit', hasPassword?:boolean, expiresAt?:string, viewCount?:number, lastViewedAt?:string }} ShareLink
- * @typedef {Deck & { share?:ShareLink, visitor?:{ id:string, name:string, email:string }, passwordRequired?:boolean, visitorRequired?:boolean }} SharedDeck
+ * @typedef {Deck & { share?:ShareLink, visitor?:{ id:string, name:string, email:string }, passwordRequired?:boolean, visitorRequired?:boolean, privacyNotice?:string }} SharedDeck
  * @typedef {{ role:'user'|'agent', content:string, createdAt?:string }} ChatMessage
  */
 
@@ -383,5 +383,6 @@ function normalizeSharedDeck(raw) {
     visitor: raw.visitor ?? null,
     passwordRequired: Boolean(raw.passwordRequired),
     visitorRequired: Boolean(raw.visitorRequired),
+    privacyNotice: raw.privacyNotice ?? null,
   };
 }

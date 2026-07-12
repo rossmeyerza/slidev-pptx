@@ -575,6 +575,7 @@ export function createApiRouter(
       visitor,
       passwordRequired: false,
       visitorRequired,
+      privacyNotice: SHARE_PRIVACY_NOTICE,
     });
   });
 
@@ -906,6 +907,9 @@ function sharePasswordGateHtml(token: string, name: string): string {
 </html>`;
 }
 
+const SHARE_PRIVACY_NOTICE =
+  'Your name and email are shared with the deck owner so they can see who opened this link and when. They are not used for anything else.';
+
 function shareVisitorGateHtml(token: string, name: string, email: string): string {
   const shareUrl = `/share/${encodeURIComponent(token)}/#/1`;
   return `<!doctype html>
@@ -933,6 +937,7 @@ function shareVisitorGateHtml(token: string, name: string, email: string): strin
             <label class="form-label" for="visitorEmail">Email</label>
             <input class="form-control" id="visitorEmail" name="email" type="email" autocomplete="email" required>
           </div>
+          <p class="text-body-secondary small mb-3">${SHARE_PRIVACY_NOTICE}</p>
           <div class="alert alert-danger d-none" id="visitorError" role="alert"></div>
           <button class="btn btn-primary" type="submit">Continue</button>
         </form>

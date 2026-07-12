@@ -575,6 +575,7 @@ function ShareClient({ token }) {
             <label className="form-label" htmlFor="visitorEmail">Email</label>
             <input className="form-control" id="visitorEmail" type="email" value={visitorEmail} onChange={(event) => setVisitorEmail(event.target.value)} autoComplete="email" required />
           </div>
+          <p className="text-body-secondary small mb-0">{shareQuery.data?.privacyNotice ?? 'Your name and email are shared with the deck owner so they can see who opened this link and when. They are not used for anything else.'}</p>
           <button className="btn btn-primary" disabled={busy === 'visitor'} type="submit">Continue</button>
         </form>
       </CenteredPanel>
