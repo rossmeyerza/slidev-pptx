@@ -1510,6 +1510,6 @@ function isAllowedRuntimeAsset(requestPath: string): boolean {
   const segments = normalized.split('/');
   if (segments.some((segment) => !segment || segment.startsWith('.'))) return false;
   if (segments.includes('node_modules') || segments.includes('dist')) return false;
-  if (['meta.json', 'slides.md', 'package.json', 'package-lock.json'].includes(path.posix.basename(normalized))) return false;
+  if (['meta.json', 'package.json', 'package-lock.json'].includes(path.posix.basename(normalized))) return false;
   return true;
 }

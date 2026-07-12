@@ -32,7 +32,7 @@ interface CaptureSlidePngsOptions {
 }
 
 const SHELL_FILES = new Set(['index.html', 'runtime.js', 'runtime.css']);
-const DENIED_BASENAMES = new Set(['meta.json', 'slides.md', 'package.json', 'package-lock.json']);
+const DENIED_BASENAMES = new Set(['meta.json', 'package.json', 'package-lock.json']);
 const SLIDE_WIDTH = 1280;
 const SLIDE_HEIGHT = 720;
 const SLIDE_WIDTH_EMU = 9144000;

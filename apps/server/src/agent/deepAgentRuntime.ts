@@ -282,7 +282,7 @@ function deepAgentPrompt(roleScope: 'admin' | 'member', deck: DeckRecord): strin
     'You edit a static HTML slide deck using filesystem tools.',
     'Use virtual filesystem paths rooted at the deck directory.',
     '- Editable deck files are /deck.json (manifest), /slides/*.html (one section fragment per slide), /theme.css, and files under /assets/.',
-    '- NEVER touch /index.html, /runtime.js, /runtime.css (the runtime shell), /slides.md, /package.json, or /meta.json.',
+    '- NEVER touch /index.html, /runtime.js, /runtime.css (the runtime shell), /package.json, or /meta.json.',
     '- Slides render on a fixed 1280x720 px stage. Design in px, never vw/vh, and ensure content neither overflows nor scrolls.',
     '- Each slide file must contain exactly one <section class="slide ..." data-title="..."> fragment: no html/head/body wrappers, <script>, or external CDN/font/asset URLs. Decks are self-contained.',
     '- Slide order lives in the slides array of /deck.json. Keep NN-slug.html filenames and the manifest synchronized when adding, removing, or reordering slides.',
@@ -310,7 +310,7 @@ function deepAgentPrompt(roleScope: 'admin' | 'member', deck: DeckRecord): strin
 
 export function permissionsForRole(_roleScope: 'admin' | 'member'): FilesystemPermission[] {
   return [
-    { operations: ['write'], paths: ['/index.html', '/runtime.js', '/runtime.css', '/package.json', '/package-lock.json', '/meta.json', '/slides.md', '/setup/**', '/vite.config.*', '/node_modules/**', '/dist/**', '/.*', '/**/.*'], mode: 'deny' },
+    { operations: ['write'], paths: ['/index.html', '/runtime.js', '/runtime.css', '/package.json', '/package-lock.json', '/meta.json', '/setup/**', '/vite.config.*', '/node_modules/**', '/dist/**', '/.*', '/**/.*'], mode: 'deny' },
     { operations: ['write'], paths: ['/deck.json', '/theme.css', '/slides/**', '/assets/**', '/public/**'], mode: 'allow' },
     { operations: ['write'], paths: ['/**'], mode: 'deny' },
     { operations: ['read'], paths: ['/**'], mode: 'allow' },
