@@ -50,6 +50,7 @@ export interface ScaffoldRecord {
   key: string;
   name: string;
   description: string;
+  thumbnailUrl?: string;
   isDefault: boolean;
   isActive: boolean;
   minRole: UserRole;

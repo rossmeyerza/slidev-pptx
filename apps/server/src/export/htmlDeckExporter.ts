@@ -24,6 +24,13 @@ export interface ExportHtmlDeckOptions {
   signal?: AbortSignal;
 }
 
+interface CaptureSlidePngsOptions {
+  slides?: number[];
+  scale?: number;
+  signal?: AbortSignal;
+  afterCapture?: (page: import('playwright').Page, screenshots: Buffer[]) => Promise<void>;
+}
+
 const SHELL_FILES = new Set(['index.html', 'runtime.js', 'runtime.css']);
 const DENIED_BASENAMES = new Set(['meta.json', 'slides.md', 'package.json', 'package-lock.json']);
 const SLIDE_WIDTH = 1280;
@@ -34,6 +41,39 @@ const SLIDE_HEIGHT_EMU = 5143500;
 export async function exportHtmlDeck(options: ExportHtmlDeckOptions): Promise<{ slideCount: number; verification?: VerificationResult }> {
   const scale = options.scale ?? 2;
   if (!Number.isFinite(scale) || scale <= 0) throw new Error('Export scale must be a positive number');
+
+  const screenshots = await captureSlidePngs(options.deckDir, options.shellDir, {
+    scale,
+    signal: options.signal,
+    afterCapture: options.format === 'pdf'
+      ? (page, captured) => writePdf(page, captured, options.outputPath)
+      : undefined,
+  });
+  const slideCount = screenshots.length;
+
+  if (options.format === 'pptx') {
+    await writePptx(screenshots, options.outputPath);
+    const verification = await verifyPptx(options.outputPath, slideCount, scale);
+    if (!verification.ok) throw new Error(`PPTX verification failed: ${verification.errors.join(' ')}`);
+    return { slideCount, verification };
+  }
+
+  const pdf = await fs.readFile(options.outputPath);
+  if (!pdf.length) throw new Error('PDF export is empty');
+  const pageMarkers = pdf.toString('latin1').match(/\/Type\s*\/Page\b/g)?.length ?? 0;
+  if (pageMarkers < slideCount) throw new Error(`PDF sanity check failed: expected at least ${slideCount} pages, found ${pageMarkers}`);
+  return { slideCount };
+}
+
+export async function generateThumbnail(deckDir: string, shellDir: string, outputPath: string): Promise<void> {
+  const [thumbnail] = await captureSlidePngs(deckDir, shellDir, { slides: [1], scale: 1 });
+  if (!thumbnail) throw new Error('Could not capture scaffold thumbnail');
+  await fs.writeFile(outputPath, thumbnail);
+}
+
+async function captureSlidePngs(deckDir: string, shellDir: string, options: CaptureSlidePngsOptions = {}): Promise<Buffer[]> {
+  const scale = options.scale ?? 2;
+  if (!Number.isFinite(scale) || scale <= 0) throw new Error('Capture scale must be a positive number');
 
   const server = http.createServer(async (req, res) => {
     try {
@@ -48,7 +88,7 @@ export async function exportHtmlDeck(options: ExportHtmlDeckOptions): Promise<{ 
         res.end('Not found');
         return;
       }
-      const root = SHELL_FILES.has(requestPath) ? options.shellDir : options.deckDir;
+      const root = SHELL_FILES.has(requestPath) ? shellDir : deckDir;
       const filePath = safeStaticPath(root, requestPath);
       const data = await fs.readFile(filePath);
       res.writeHead(200, { 'content-type': contentType(filePath) });
@@ -86,8 +126,14 @@ export async function exportHtmlDeck(options: ExportHtmlDeckOptions): Promise<{ 
     }, undefined, { timeout: 15_000 });
 
     const slideCount = await page.evaluate(() => (window as unknown as { __deck: { count: number } }).__deck.count);
+    const slideNumbers = options.slides ?? Array.from({ length: slideCount }, (_, index) => index + 1);
+    for (const slideNumber of slideNumbers) {
+      if (!Number.isInteger(slideNumber) || slideNumber < 1 || slideNumber > slideCount) {
+        throw new Error(`Slide ${slideNumber} is outside the deck range 1-${slideCount}`);
+      }
+    }
     const screenshots: Buffer[] = [];
-    for (let slideNumber = 1; slideNumber <= slideCount; slideNumber += 1) {
+    for (const slideNumber of slideNumbers) {
       options.signal?.throwIfAborted();
       await page.evaluate((number) => (window as unknown as { __deck: { go: (slide: number) => void } }).__deck.go(number), slideNumber);
       await page.evaluate(async () => {
@@ -103,20 +149,8 @@ export async function exportHtmlDeck(options: ExportHtmlDeckOptions): Promise<{ 
       if (await stage.count() !== 1) throw new Error(`Expected one .deck-stage element on slide ${slideNumber}`);
       screenshots.push(await stage.screenshot({ type: 'png' }));
     }
-
-    if (options.format === 'pptx') {
-      await writePptx(screenshots, options.outputPath);
-      const verification = await verifyPptx(options.outputPath, slideCount, scale);
-      if (!verification.ok) throw new Error(`PPTX verification failed: ${verification.errors.join(' ')}`);
-      return { slideCount, verification };
-    }
-
-    await writePdf(page, screenshots, options.outputPath);
-    const pdf = await fs.readFile(options.outputPath);
-    if (!pdf.length) throw new Error('PDF export is empty');
-    const pageMarkers = pdf.toString('latin1').match(/\/Type\s*\/Page\b/g)?.length ?? 0;
-    if (pageMarkers < slideCount) throw new Error(`PDF sanity check failed: expected at least ${slideCount} pages, found ${pageMarkers}`);
-    return { slideCount };
+    await options.afterCapture?.(page, screenshots);
+    return screenshots;
   } finally {
     options.signal?.removeEventListener('abort', abort);
     await browser?.close().catch(() => undefined);

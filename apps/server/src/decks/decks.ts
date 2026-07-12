@@ -5,8 +5,10 @@ import type { AppConfig, DeckMeta, DeckRecord, ScaffoldRecord, UserRole } from '
 import { readRequiredJson, readRequiredText, readText, writeJson, writeText } from '../core/storage.js';
 import type { PgPool } from '../db/db.js';
 import { SettingsService } from './settings.js';
+import { generateThumbnail } from '../export/htmlDeckExporter.js';
 
 const SNAPSHOT_ROOTS = ['deck.json', 'theme.css', 'slides', 'assets', 'public'] as const;
+const scaffoldThumbnailJobs = new Map<string, Promise<string>>();
 
 /**
  * Owns deck folders under `.data/decks/<id>`.
@@ -61,9 +63,10 @@ export class DeckStore {
     const settings = await new SettingsService(this.config).load();
     const configured = settings.scaffolds?.items ?? {};
     const defaultKey = settings.scaffolds?.defaultKey ?? this.config.scaffoldKey;
-    const scaffolds = await Promise.all([...discovered.entries()].map(async ([key, source]) => {
+    const scaffolds = await Promise.all([...discovered.entries()].map(async ([key, source]): Promise<ScaffoldRecord | null> => {
         const overrides = configured[key] ?? {};
-        const isActive = overrides.isActive ?? await fs.access(path.join(source.root, key, 'deck.json')).then(() => true).catch(() => false);
+        const hasDeckManifest = await fs.access(path.join(source.root, key, 'deck.json')).then(() => true).catch(() => false);
+        const isActive = overrides.isActive ?? hasDeckManifest;
         const minRole = overrides.minRole ?? 'employee';
         if (!input.includeInactive && !isActive) return null;
         if (input.userRole !== 'admin' && minRole === 'admin') return null;
@@ -73,6 +76,7 @@ export class DeckStore {
           key,
           name: overrides.name || details.name || labelFromKey(key),
           description: overrides.description ?? details.description ?? '',
+          thumbnailUrl: isActive && hasDeckManifest ? `/api/scaffolds/${encodeURIComponent(key)}/thumbnail` : undefined,
           isDefault: key === defaultKey,
           isActive,
           minRole,
@@ -81,6 +85,54 @@ export class DeckStore {
     return scaffolds
       .filter((scaffold): scaffold is ScaffoldRecord => scaffold !== null)
       .sort((left, right) => Number(right.isDefault) - Number(left.isDefault) || left.name.localeCompare(right.name));
+  }
+
+  async scaffoldThumbnail(key: string): Promise<string> {
+    await this.assertScaffoldExists(key);
+    const normalizedKey = normalizeScaffoldKey(key);
+    if (!normalizedKey) throw Object.assign(new Error('Invalid scaffold key'), { statusCode: 400 });
+    const scaffoldDir = this.scaffoldDir(key);
+    // Cache generated thumbnails in the writable data dir, never inside the
+    // scaffold source dir: built-in themes live under themes/ (git-tracked and
+    // potentially read-only in a deployed image), so writing there would either
+    // pollute the tree or fail outright.
+    const outputPath = this.scaffoldThumbnailPath(normalizedKey);
+    if (await isNonEmptyFile(outputPath)) return outputPath;
+
+    const pending = scaffoldThumbnailJobs.get(outputPath);
+    if (pending) return pending;
+
+    const generation = this.generateScaffoldThumbnail(scaffoldDir, outputPath);
+    scaffoldThumbnailJobs.set(outputPath, generation);
+    try {
+      return await generation;
+    } finally {
+      if (scaffoldThumbnailJobs.get(outputPath) === generation) scaffoldThumbnailJobs.delete(outputPath);
+    }
+  }
+
+  private scaffoldThumbnailPath(normalizedKey: string): string {
+    return path.join(this.config.dataDir, 'thumbnails', `${normalizedKey}.png`);
+  }
+
+  private async generateScaffoldThumbnail(scaffoldDir: string, outputPath: string): Promise<string> {
+    const cacheDir = path.dirname(outputPath);
+    await fs.mkdir(cacheDir, { recursive: true });
+    const tempPath = path.join(cacheDir, `.thumbnail-${randomUUID()}.png`);
+    try {
+      await generateThumbnail(scaffoldDir, path.join(this.config.repoRoot, 'runtime'), tempPath);
+      if (!await isNonEmptyFile(outputPath)) {
+        try {
+          await fs.rename(tempPath, outputPath);
+        } catch (error) {
+          if (!isNodeErrorCode(error, 'EEXIST') && !isNodeErrorCode(error, 'ENOTEMPTY')) throw error;
+          if (!await isNonEmptyFile(outputPath)) throw error;
+        }
+      }
+      return outputPath;
+    } finally {
+      await fs.rm(tempPath, { force: true }).catch(() => undefined);
+    }
   }
 
   async assertScaffoldAvailable(scaffoldKey: string, userRole: UserRole): Promise<void> {
@@ -201,6 +253,9 @@ export class DeckStore {
     manifest.title = 'Untitled deck';
     await writeText(path.join(target, 'deck.json'), `${JSON.stringify(manifest, null, 2)}\n`);
     await writeJson(path.join(target, 'package.json'), { name: input.name.trim(), description: input.description?.trim() ?? '', private: true, version: '1.0.0' });
+    // Drop any thumbnail cached under this key by a prior template of the same
+    // name (deleted then re-created) so the new template renders its own slide 1.
+    await fs.rm(this.scaffoldThumbnailPath(key), { force: true }).catch(() => undefined);
     return (await this.listScaffolds({ includeInactive: true, userRole: 'admin' })).find((item) => item.key === key)!;
   }
 
@@ -695,6 +750,10 @@ function normalizeVisibility(value: unknown): DeckMeta['visibility'] {
 
 function slugify(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 80) || 'deck';
+}
+
+async function isNonEmptyFile(filePath: string): Promise<boolean> {
+  return fs.stat(filePath).then((stat) => stat.isFile() && stat.size > 0).catch(() => false);
 }
 
 function parsePackageDetails(value: string): { name?: string; description?: string } {

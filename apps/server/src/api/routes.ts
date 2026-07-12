@@ -221,6 +221,13 @@ export function createApiRouter(
     sendJson(res, 200, { scaffolds: await decks.listScaffolds({ userRole: context.user.role }) });
   });
 
+  router.add('GET', '/api/scaffolds/:key/thumbnail', async (req, res) => {
+    await auth.requireUser(req);
+    const file = await decks.scaffoldThumbnail(req.params.key);
+    res.setHeader('cache-control', 'public, max-age=300');
+    await sendInlineFile(res, file);
+  });
+
   router.add('POST', '/api/decks', async (req, res) => {
     const context = await auth.requireUser(req);
     const body = asObject(req.body);

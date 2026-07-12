@@ -6,7 +6,7 @@ import { betterAuthSignOut, getBetterAuthSession, requestBetterAuthMagicLink } f
  * @typedef {{ baseUrl?:string, memberModel?:string, adminModel?:string, timeoutMs?:number, overrides?:Record<string, boolean> }} DeckAgentSettings
  * @typedef {{ id:string, title:string, owner:string, status:string, scaffoldKey?:string, activeEditorUserId?:string, updatedAt?:string, previewUrl?:string, publishedUrl?:string, shares?:ShareLink[], messages?:ChatMessage[], snapshots?:{id:string,createdAt:string}[], agent?:DeckAgentSettings, pptx?:{ id:string, format?:'pptx'|'pdf'|'markdown', status:string, downloadUrl?:string, error?:string, updatedAt?:string, verification?:{ slideCount:number, imageCount:number } } }} Deck
  * @typedef {{ id:string, deckId:string, userId:string, role:'editor'|'viewer', createdAt:string, user?:User }} Collaborator
- * @typedef {{ key:string, name:string, description:string, isDefault:boolean, isActive?:boolean, minRole?:'admin'|'employee' }} Scaffold
+ * @typedef {{ key:string, name:string, description:string, thumbnailUrl?:string, isDefault:boolean, isActive?:boolean, minRole?:'admin'|'employee' }} Scaffold
  * @typedef {{ id:string, url:string, name:string, email:string, permission?:'view'|'edit', hasPassword?:boolean, expiresAt?:string, viewCount?:number, lastViewedAt?:string }} ShareLink
  * @typedef {Deck & { share?:ShareLink, visitor?:{ id:string, name:string, email:string }, passwordRequired?:boolean, visitorRequired?:boolean }} SharedDeck
  * @typedef {{ role:'user'|'agent', content:string, createdAt?:string }} ChatMessage

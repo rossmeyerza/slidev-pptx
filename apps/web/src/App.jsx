@@ -872,11 +872,35 @@ function DeckDashboard({ user, decks, scaffolds, loading, onSelectDeck, onCreate
               <label className="form-label" htmlFor="newDeckTitle">Deck title</label>
               <input className="form-control" id="newDeckTitle" value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Quarterly product review" required />
             </div>
-            <div className="col-12 col-lg-3">
-              <label className="form-label" htmlFor="newDeckScaffold">Template</label>
-              <select className="form-select" id="newDeckScaffold" value={selectedScaffold} onChange={(event) => setScaffold(event.target.value)} disabled={!scaffolds.length}>
-                {scaffolds.map((item) => <option key={item.key} value={item.key}>{item.name}</option>)}
-              </select>
+            <div className="col-12">
+              <span className="form-label d-block">Template</span>
+              <div className="row row-cols-1 row-cols-sm-2 row-cols-lg-3 g-3">
+                {scaffolds.map((item) => {
+                  const inputId = `newDeckScaffold-${item.key}`;
+                  const selected = selectedScaffold === item.key;
+                  return (
+                    <div className="col" key={item.key}>
+                      <label className={`card h-100 ${selected ? 'border-primary border-2' : 'border'}`} htmlFor={inputId}>
+                        <input
+                          className="form-check-input visually-hidden"
+                          type="radio"
+                          name="scaffold"
+                          id={inputId}
+                          value={item.key}
+                          checked={selected}
+                          onChange={() => setScaffold(item.key)}
+                        />
+                        <div className="ratio ratio-16x9">
+                          {item.thumbnailUrl
+                            ? <img className="card-img-top object-fit-cover w-100 h-100" src={item.thumbnailUrl} alt="" loading="lazy" />
+                            : <div className="bg-body-secondary text-body-secondary d-flex align-items-center justify-content-center p-3 text-center small">{item.name}</div>}
+                        </div>
+                        <div className="card-body p-2"><span className="fw-semibold small">{item.name}</span></div>
+                      </label>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
             <div className="col-12 col-lg-2">
               <label className="form-label" htmlFor="newDeckAudience">Audience</label>
