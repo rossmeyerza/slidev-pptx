@@ -13,7 +13,7 @@ create table if not exists deck (
   owner_user_id text not null,
   title text not null,
   slug text not null,
-  scaffold_key text not null default 'commercial-profile',
+  scaffold_key text not null default 'commercial-html',
   visibility text not null default 'private' check (visibility in ('private', 'shared', 'published')),
   draft_url text not null,
   share_token text null,

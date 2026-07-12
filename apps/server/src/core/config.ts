@@ -12,7 +12,7 @@ import type { AppConfig } from './types.js';
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
   const repoRoot = path.resolve(appRoot, '..', '..');
-  const dataDir = path.resolve(env.SLIDEV_AGENT_DATA_DIR ?? path.join(repoRoot, '.data'));
+  const dataDir = path.resolve(env.DECKHAND_DATA_DIR ?? path.join(repoRoot, '.data'));
   const builtWebDir = path.join(repoRoot, 'apps', 'web', 'dist');
   const defaultWebDir = path.join(repoRoot, 'apps', 'web');
   const fallbackWebDir = path.join(repoRoot, 'apps', 'server', 'public');
@@ -22,7 +22,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     appRoot,
     dataDir,
     decksDir: path.join(dataDir, 'decks'),
-    staticDir: path.resolve(env.SLIDEV_AGENT_WEB_DIR ?? (awaitableExists(builtWebDir) ? builtWebDir : defaultWebDir)),
+    staticDir: path.resolve(env.DECKHAND_WEB_DIR ?? (awaitableExists(builtWebDir) ? builtWebDir : defaultWebDir)),
     scaffoldKey: nonEmpty(env.DEFAULT_SCAFFOLD) ?? 'commercial-html',
     host: env.HOST ?? '127.0.0.1',
     port: parsePort(env.PORT),

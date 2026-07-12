@@ -95,7 +95,7 @@ log "starting isolated server on port $PORT"
 (
   cd "$ROOT_DIR"
   SKIP_ENV_LOCAL=true \
-  SLIDEV_AGENT_DATA_DIR="$WORK_DIR/data" \
+  DECKHAND_DATA_DIR="$WORK_DIR/data" \
   HOST=127.0.0.1 \
   PORT="$PORT" \
 	  PUBLIC_BASE_URL="http://127.0.0.1:$PORT" \
@@ -149,56 +149,20 @@ printf '%s' "$agent_runtime_payload" | grep -q '"memberModel":"smoke-member-mode
 agent_models_payload="$(curl -fsS -b "$COOKIE_JAR" "http://127.0.0.1:$PORT/api/admin/agent-models?baseUrl=http%3A%2F%2F127.0.0.1%3A$AGENT_PORT%2Fv1")"
 printf '%s' "$agent_models_payload" | grep -q '"smoke-admin-model"' || fail "admin agent models should load from provider"
 printf '%s' "$agent_models_payload" | grep -q '"smoke-member-model"' || fail "admin agent models should include member model"
-curl -fsS -b "$COOKIE_JAR" -X PATCH "http://127.0.0.1:$PORT/api/admin/settings" -H 'content-type: application/json' --data '{"scaffolds":{"defaultKey":"commercial-profile","items":{"basic":{"name":"Admin Basic","description":"Admin-only smoke scaffold","isActive":true,"minRole":"admin"},"commercial-profile":{"name":"Commercial Profile","description":"Default commercial scaffold","isActive":true,"minRole":"employee"}}}}' | grep -q '"defaultKey":"commercial-profile"' || fail "admin settings should update scaffold curation"
-curl -fsS -b "$COOKIE_JAR" "http://127.0.0.1:$PORT/api/scaffolds" | grep -q '"name":"Admin Basic"' || fail "admin scaffold list should include curated template name"
-
-log "importing PPTX"
-node - "$WORK_DIR/import-source.pptx" <<'NODE'
-const PptxGenJS = require('pptxgenjs');
-const out = process.argv[2];
-const pptx = new PptxGenJS();
-pptx.layout = 'LAYOUT_WIDE';
-const slide = pptx.addSlide();
-slide.addText('Imported Smoke Deck', { x: 0.8, y: 0.8, w: 8, h: 0.6, fontSize: 30, bold: true });
-slide.addText('PPTX import smoke content', { x: 0.8, y: 1.8, w: 8, h: 0.5, fontSize: 18 });
-pptx.writeFile({ fileName: out });
-NODE
-node - "$WORK_DIR/import-source.pptx" "$WORK_DIR/import-payload.json" <<'NODE'
-const fs = require('fs');
-const [input, output] = process.argv.slice(2);
-fs.writeFileSync(output, JSON.stringify({
-  filename: 'import-source.pptx',
-  title: 'Imported Smoke Deck',
-  contentBase64: fs.readFileSync(input).toString('base64'),
-}));
-NODE
-import_payload="$(curl -fsS -b "$COOKIE_JAR" -X POST "http://127.0.0.1:$PORT/api/imports/pptx" -H 'content-type: application/json' --data-binary "@$WORK_DIR/import-payload.json")"
-import_deck_id="$(printf '%s' "$import_payload" | json_string id)"
-[[ -f "$WORK_DIR/data/decks/$import_deck_id/slides.md" ]] || fail "imported deck slides.md was not created"
-printf '%s' "$import_payload" | grep -q '"scaffoldKey":"pptx-import"' || fail "imported deck was not flagged as pptx-import"
-grep -q 'PPTX import smoke content' "$WORK_DIR/data/decks/$import_deck_id/slides.md" || fail "imported deck did not contain PPTX text"
+curl -fsS -b "$COOKIE_JAR" -X PATCH "http://127.0.0.1:$PORT/api/admin/settings" -H 'content-type: application/json' --data '{"scaffolds":{"defaultKey":"custom-html","items":{"custom-html":{"name":"Custom HTML","description":"Default HTML scaffold","isActive":true,"minRole":"employee"},"commercial-html":{"name":"Commercial HTML","description":"Branded HTML scaffold","isActive":true,"minRole":"employee"}}}}' | grep -q '"defaultKey":"custom-html"' || fail "admin settings should update scaffold curation"
+curl -fsS -b "$COOKIE_JAR" "http://127.0.0.1:$PORT/api/scaffolds" | grep -q '"name":"Custom HTML"' || fail "admin scaffold list should include curated template name"
 
 log "creating deck"
 deck_payload="$(curl -fsS -b "$COOKIE_JAR" -X POST "http://127.0.0.1:$PORT/api/decks" -H 'content-type: application/json' --data '{"title":"Smoke Deck"}')"
 deck_id="$(printf '%s' "$deck_payload" | json_string id)"
-[[ -f "$WORK_DIR/data/decks/$deck_id/slides.md" ]] || fail "deck slides.md was not created"
-printf '%s' "$deck_payload" | grep -q '"scaffoldKey":"commercial-profile"' || fail "deck was not created from commercial-profile scaffold"
-[[ -f "$WORK_DIR/data/decks/$deck_id/theme/index.ts" ]] || fail "commercial theme was not copied"
+[[ -f "$WORK_DIR/data/decks/$deck_id/deck.json" ]] || fail "deck manifest was not created"
+[[ ! -e "$WORK_DIR/data/decks/$deck_id/slides.md" ]] || fail "deck should not contain a slides.md stub"
+printf '%s' "$deck_payload" | grep -q '"scaffoldKey":"custom-html"' || fail "deck was not created from custom-html scaffold"
 curl -sS -i -H "Host: $deck_id.decks.smoke.test" "http://127.0.0.1:$PORT/" | grep -q '401 Unauthorized' || fail "deck host should require auth"
-session_cookie="$(awk '$6 == "slidev_session" { print $7 }' "$COOKIE_JAR" | tail -n 1)"
-curl -fsS -H "Host: $deck_id.decks.smoke.test" -H "Cookie: slidev_session=$session_cookie" "http://127.0.0.1:$PORT/" | grep -q '<div id="app">' || fail "authenticated deck host should serve Slidev"
-[[ -f "$WORK_DIR/data/draft/$deck_id/.slidev-agent-build.json" ]] || fail "draft preview should write a build manifest"
-preview_status_payload="$(curl -fsS -b "$COOKIE_JAR" "http://127.0.0.1:$PORT/api/decks/$deck_id/preview-build")"
-printf '%s' "$preview_status_payload" | grep -Eq '"status":"(fresh|building)"' || {
-  printf '[smoke-app] preview status payload: %s\n' "$preview_status_payload" >&2
-  fail "draft preview status should be cached or finishing after serving cached build"
-}
+session_cookie="$(awk '$6 == "deckhand_session" { print $7 }' "$COOKIE_JAR" | tail -n 1)"
+curl -fsS -H "Host: $deck_id.decks.smoke.test" -H "Cookie: deckhand_session=$session_cookie" "http://127.0.0.1:$PORT/" | grep -q 'deck-stage' || fail "authenticated deck host should serve the HTML runtime"
 curl -fsS "http://127.0.0.1:$PORT/internal/tls-check?domain=$deck_id.decks.smoke.test" | grep -q '"ok":true' || fail "tls check should allow existing deck host"
 curl -sS -i "http://127.0.0.1:$PORT/internal/tls-check?domain=missing.decks.smoke.test" | grep -q '404 Not Found' || fail "tls check should reject unknown deck host"
-basic_deck_payload="$(curl -fsS -b "$COOKIE_JAR" -X POST "http://127.0.0.1:$PORT/api/decks" -H 'content-type: application/json' --data '{"title":"Basic Smoke Deck","scaffold":"basic"}')"
-basic_deck_id="$(printf '%s' "$basic_deck_payload" | json_string id)"
-printf '%s' "$basic_deck_payload" | grep -q '"scaffoldKey":"basic"' || fail "deck was not created from selected basic scaffold"
-grep -q 'Basic Smoke Deck' "$WORK_DIR/data/decks/$basic_deck_id/slides.md" || fail "basic scaffold title was not applied"
 custom_deck_payload="$(curl -fsS -b "$COOKIE_JAR" -X POST "http://127.0.0.1:$PORT/api/decks" -H 'content-type: application/json' --data '{"title":"Custom Runtime Smoke","scaffold":"custom-html"}')"
 custom_deck_id="$(printf '%s' "$custom_deck_payload" | json_string id)"
 printf '%s' "$custom_deck_payload" | grep -q '"scaffoldKey":"custom-html"' || fail "deck was not created from custom-html scaffold"
@@ -244,16 +208,9 @@ branded_deck_id="$(printf '%s' "$branded_deck_payload" | json_string id)"
 printf '%s' "$branded_deck_payload" | grep -q "\"previewUrl\":\"/runtime/$branded_deck_id/#/1\"" || fail "commercial-html deck should use runtime preview URL"
 curl -fsS -b "$COOKIE_JAR" "http://127.0.0.1:$PORT/runtime/$branded_deck_id/theme.css" | grep -q -- '--brand' || fail "commercial-html theme should be served"
 curl -fsS -b "$COOKIE_JAR" "http://127.0.0.1:$PORT/runtime/$branded_deck_id/slides/01-cover.html" | grep -q 'layout-cover' || fail "commercial-html cover slide should be served"
-markdown_export_payload="$(curl -fsS -b "$COOKIE_JAR" -X POST "http://127.0.0.1:$PORT/api/decks/$deck_id/export" -H 'content-type: application/json' --data '{"format":"markdown"}')"
-markdown_export_id="$(printf '%s' "$markdown_export_payload" | node -e "const fs=require('fs'); const input=JSON.parse(fs.readFileSync(0,'utf8')); process.stdout.write(input.export.id)")"
-[[ -n "$markdown_export_id" ]] || fail "markdown export job id was not returned"
-curl -fsS -b "$COOKIE_JAR" "http://127.0.0.1:$PORT/api/exports/$markdown_export_id" | grep -q "\"deckId\":\"$deck_id\"" || fail "export metadata should resolve for deck viewer"
-
 log "checking admin deck tools"
 curl -fsS -b "$COOKIE_JAR" -X POST "http://127.0.0.1:$PORT/api/decks/$deck_id/admin-tools/components" -H 'content-type: application/json' --data '{"name":"SmokeWidget"}' | grep -q '"path":"theme/components/SmokeWidget.vue"' || fail "admin component tool should return created file"
 [[ -f "$WORK_DIR/data/decks/$deck_id/theme/components/SmokeWidget.vue" ]] || fail "admin component tool should create file"
-preview_status_after_component="$(curl -fsS -b "$COOKIE_JAR" "http://127.0.0.1:$PORT/api/decks/$deck_id/preview-build")"
-printf '%s' "$preview_status_after_component" | grep -Eq '"status":"(building|stale|fresh)"' || fail "admin component change should keep or schedule a draft preview build"
 curl -fsS -b "$COOKIE_JAR" -X POST "http://127.0.0.1:$PORT/api/decks/$deck_id/admin-tools/layouts" -H 'content-type: application/json' --data '{"name":"smoke-layout"}' | grep -q '"path":"theme/layouts/smoke-layout.vue"' || fail "admin layout tool should return created file"
 [[ -f "$WORK_DIR/data/decks/$deck_id/theme/layouts/smoke-layout.vue" ]] || fail "admin layout tool should create file"
 curl -fsS -b "$COOKIE_JAR" -X POST "http://127.0.0.1:$PORT/api/decks/$deck_id/admin-tools/dependencies" -H 'content-type: application/json' --data '{"name":"left-pad","version":"1.3.0","install":false}' | grep -q '"installed":false' || fail "admin dependency tool should update without install"
@@ -299,21 +256,15 @@ curl -fsS -c "$SHARE_COOKIE_JAR" -X POST "http://127.0.0.1:$PORT/api/share/$edit
 curl -fsS -b "$SHARE_COOKIE_JAR" "http://127.0.0.1:$PORT/api/share/$edit_share_token" | grep -q '"visitorRequired":false' || fail "edit share should recognize identified visitor"
 curl -fsS -b "$COOKIE_JAR" "http://127.0.0.1:$PORT/api/decks/$deck_id/shares/$edit_share_id/visitors" | grep -q '"email":"actual-editor@example.com"' || fail "share visitor list should include identified visitors"
 curl -fsS -b "$SHARE_COOKIE_JAR" "http://127.0.0.1:$PORT/share/$edit_share_token" | grep -q 'Client workbench' || fail "identified edit share should show client workbench"
-curl -fsS -b "$SHARE_COOKIE_JAR" "http://127.0.0.1:$PORT/share/$edit_share_token/deck" | grep -q '<div id="app">' || fail "edit share deck iframe route should serve Slidev"
+curl -fsS -b "$SHARE_COOKIE_JAR" "http://127.0.0.1:$PORT/share/$edit_share_token/deck" | grep -q 'deck-stage' || fail "edit share deck iframe route should serve the HTML runtime"
 
 log "checking deck permission boundary"
 invite_payload="$(curl -fsS -b "$COOKIE_JAR" -X POST "http://127.0.0.1:$PORT/api/users/invite" -H 'content-type: application/json' --data '{"email":"employee@example.com","name":"Smoke Employee","role":"employee"}')"
 invite_url="$(printf '%s' "$invite_payload" | json_path_string inviteUrl)"
 [[ -n "$invite_url" ]] || fail "employee invite URL was not returned"
 curl -fsS -c "$EMPLOYEE_COOKIE_JAR" "$invite_url" >/dev/null
-curl -fsS -b "$EMPLOYEE_COOKIE_JAR" "http://127.0.0.1:$PORT/api/scaffolds" | grep -q '"key":"commercial-profile"' || fail "employee should see employee templates"
-if curl -fsS -b "$EMPLOYEE_COOKIE_JAR" "http://127.0.0.1:$PORT/api/scaffolds" | grep -q '"key":"basic"'; then
-  fail "employee should not see admin-only scaffold"
-fi
-curl -sS -i -b "$EMPLOYEE_COOKIE_JAR" -X POST "http://127.0.0.1:$PORT/api/decks" -H 'content-type: application/json' --data '{"title":"Blocked Basic","scaffold":"basic"}' | grep -q '403 Forbidden' || fail "employee should not create from admin-only scaffold"
+curl -fsS -b "$EMPLOYEE_COOKIE_JAR" "http://127.0.0.1:$PORT/api/scaffolds" | grep -q '"key":"commercial-html"' || fail "employee should see employee templates"
 curl -sS -i -b "$EMPLOYEE_COOKIE_JAR" "http://127.0.0.1:$PORT/api/decks/$deck_id" | grep -q '403 Forbidden' || fail "employee should not access admin-owned deck"
-curl -sS -i -b "$EMPLOYEE_COOKIE_JAR" "http://127.0.0.1:$PORT/api/exports/$markdown_export_id" | grep -q '403 Forbidden' || fail "employee should not access export metadata for another deck"
-curl -sS -i -b "$EMPLOYEE_COOKIE_JAR" "http://127.0.0.1:$PORT/api/exports/$markdown_export_id/download" | grep -q '403 Forbidden' || fail "employee should not download export for another deck"
 curl -sS -i -b "$EMPLOYEE_COOKIE_JAR" -X POST "http://127.0.0.1:$PORT/api/decks/$deck_id/admin-tools/components" -H 'content-type: application/json' --data '{"name":"BlockedWidget"}' | grep -q '403 Forbidden' || fail "employee should not use admin deck tools"
 curl -sS -i -b "$EMPLOYEE_COOKIE_JAR" -X POST "http://127.0.0.1:$PORT/api/decks/$deck_id/template" -H 'content-type: application/json' --data '{"name":"Blocked Template"}' | grep -q '403 Forbidden' || fail "employee should not save a deck as a template"
 curl -sS -i -b "$EMPLOYEE_COOKIE_JAR" -X PATCH "http://127.0.0.1:$PORT/api/decks/$deck_id/agent-settings" -H 'content-type: application/json' --data '{"agent":{"adminModel":"blocked-model"}}' | grep -q '403 Forbidden' || fail "employee should not update deck agent settings"
@@ -352,7 +303,7 @@ curl -fsS -b "$COOKIE_JAR" -X DELETE "http://127.0.0.1:$PORT/api/decks/$deck_id/
 log "checking preview API boundary"
 curl -sS -i -X POST "http://127.0.0.1:$PORT/api/decks/$deck_id/live" | grep -q '401 Unauthorized' || fail "preview API should require auth"
 live_payload="$(curl -fsS -b "$COOKIE_JAR" -X POST "http://127.0.0.1:$PORT/api/decks/$deck_id/live" -H 'content-type: application/json' --data '{}')"
-printf '%s' "$live_payload" | grep -q "\"url\":\"http://$deck_id.decks.smoke.test/#/1\"" || fail "deck-domain workbench preview should return deck host URL"
+printf '%s' "$live_payload" | grep -q "\"url\":\"/runtime/$deck_id/#/1\"" || fail "workbench preview should return runtime URL"
 curl -sS -i -X POST "http://127.0.0.1:$PORT/api/decks/$deck_id/messages" -H 'content-type: application/json' --data '{"instruction":"test"}' | grep -q '401 Unauthorized' || fail "streaming message API should require auth"
 
 log "app smoke passed"

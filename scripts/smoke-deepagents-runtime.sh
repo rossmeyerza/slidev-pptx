@@ -55,7 +55,7 @@ log "starting server with deepagents on port $PORT"
 (
   cd "$ROOT_DIR"
   SKIP_ENV_LOCAL=true \
-  SLIDEV_AGENT_DATA_DIR="$WORK_DIR/data" \
+  DECKHAND_DATA_DIR="$WORK_DIR/data" \
   HOST=127.0.0.1 \
   PORT="$PORT" \
   PUBLIC_BASE_URL="http://127.0.0.1:$PORT" \

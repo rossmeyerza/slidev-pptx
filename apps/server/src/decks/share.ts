@@ -252,7 +252,7 @@ export class ShareService {
       deckId,
       channel: channel.trim() || 'local',
       createdAt: new Date().toISOString(),
-      url: `/published/${deckId}/#/1`,
+      url: `/runtime/${deckId}/#/1`,
     };
     if (!this.pool) {
       const publishes = await readJson<PublishRecord[]>(this.publishPath, []);

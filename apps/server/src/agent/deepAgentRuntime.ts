@@ -10,8 +10,7 @@ import { agentRunConfig } from './agent.js';
 import { createLangGraphCheckpointer } from '../db/db.js';
 
 export interface DeepAgentEditResult {
-  mode: 'markdown' | 'workspace';
-  markdown?: string;
+  mode: 'workspace';
   changedFiles?: string[];
   summary: string;
   model: string;
@@ -21,7 +20,6 @@ export type DeepAgentEventHandler = (event: string, data: unknown) => void;
 
 const responseFormat = z.object({
   summary: z.string(),
-  markdown: z.string().optional(),
   changedFiles: z.array(z.string()).optional(),
 });
 
@@ -59,15 +57,15 @@ export async function runDeepAgentDeckEdit(
     model,
     backend,
     ...(checkpointer ? { checkpointer } : {}),
-    permissions: permissionsForRole(runConfig.roleScope, deckKind(deck)),
+    permissions: permissionsForRole(runConfig.roleScope),
     systemPrompt: deepAgentPrompt(runConfig.roleScope, deck),
     responseFormat: toolStrategy(responseFormat),
     name: `deck-${deck.meta.id}`,
   });
 
   try {
-    const before = isWorkspaceDeck(deck) ? await snapshotWorkspace(deckRoot) : new Map<string, string>();
-    const state = await deepAgentState(instruction, deck, deckRoot, options.history ?? []);
+    const before = await snapshotWorkspace(deckRoot);
+    const state = await deepAgentState(instruction, deckRoot, options.history ?? []);
     const runOptions = {
       configurable: { thread_id: deck.meta.id },
       signal: options.signal,
@@ -75,7 +73,7 @@ export async function runDeepAgentDeckEdit(
     const result = await runDeepAgentWithEvents(agent, state, runOptions, options.onEvent);
 
     let parsed = await parseDeepAgentResult(result, deck, deckRoot, before);
-    if (isWorkspaceDeck(deck) && parsed.mode === 'workspace' && !parsed.changedFiles?.length) {
+    if (!parsed.changedFiles?.length) {
       // The model sometimes answers from the prompt-embedded file contents and
       // claims success without a single tool call. Confront it once before
       // giving up; the route-level guard fails the run if this retry also
@@ -129,62 +127,41 @@ function trimHistoryContent(content: string): string {
 
 async function deepAgentState(
   instruction: string,
-  deck: DeckRecord,
   deckRoot: string,
   history: Array<{ role: 'user' | 'agent'; content: string }> = [],
 ) {
-  if (isWorkspaceDeck(deck)) {
-    const files = await readWorkspacePromptFiles(deckRoot);
-    const slideSections = files.slides.flatMap((slide) => [
-      '',
-      `Current ${slide.path}:`,
-      '```html',
-      slide.content,
-      '```',
-    ]);
-    return {
-      messages: [
-        ...historyMessages(history),
-        {
-          role: 'user',
-          content: [
-            'Instruction:',
-            instruction,
-            '',
-            'Current /deck.json:',
-            '```json',
-            files.deckJson,
-            '```',
-            '',
-            'Current /theme.css:',
-            '```css',
-            files.themeCss,
-            '```',
-            ...slideSections,
-            '',
-            'Assets available:',
-            ...(files.assets.length ? files.assets.map((asset) => `- ${asset}`) : ['- (none)']),
-            '',
-            'After writing files, return structured output with summary and changedFiles. Do not include full file contents in the final response.',
-          ].join('\n'),
-        },
-      ],
-    };
-  }
-
+  const files = await readWorkspacePromptFiles(deckRoot);
+  const slideSections = files.slides.flatMap((slide) => [
+    '',
+    `Current ${slide.path}:`,
+    '```html',
+    slide.content,
+    '```',
+  ]);
   return {
     messages: [
       ...historyMessages(history),
       {
         role: 'user',
         content: [
+          'Instruction:',
           instruction,
           '',
-          'Edit /slides.md and return the full replacement markdown plus a concise summary.',
-          'Current /slides.md:',
-          '```md',
-          deck.markdown,
+          'Current /deck.json:',
+          '```json',
+          files.deckJson,
           '```',
+          '',
+          'Current /theme.css:',
+          '```css',
+          files.themeCss,
+          '```',
+          ...slideSections,
+          '',
+          'Assets available:',
+          ...(files.assets.length ? files.assets.map((asset) => `- ${asset}`) : ['- (none)']),
+          '',
+          'After writing files, return structured output with summary and changedFiles. Do not include full file contents in the final response.',
         ].join('\n'),
       },
     ],
@@ -301,74 +278,40 @@ function filePathsFromValue(value: unknown): Set<string> {
 }
 
 function deepAgentPrompt(roleScope: 'admin' | 'member', deck: DeckRecord): string {
-  if (isWorkspaceDeck(deck)) {
-    const shared = [
-      'You edit a static HTML slide deck using filesystem tools.',
-      'Use virtual filesystem paths rooted at the deck directory.',
-      '- Editable deck files are /deck.json (manifest), /slides/*.html (one section fragment per slide), /theme.css, and files under /assets/.',
-      '- NEVER touch /index.html, /runtime.js, /runtime.css (the runtime shell), /slides.md, /package.json, or /meta.json.',
-      '- Slides render on a fixed 1280x720 px stage. Design in px, never vw/vh, and ensure content neither overflows nor scrolls.',
-      '- Each slide file must contain exactly one <section class="slide ..." data-title="..."> fragment: no html/head/body wrappers, <script>, or external CDN/font/asset URLs. Decks are self-contained.',
-      '- Slide order lives in the slides array of /deck.json. Keep NN-slug.html filenames and the manifest synchronized when adding, removing, or reordering slides.',
-      '- data-click progressively reveals an element: bare values auto-increment, while data-click="3" pins step 3. <aside class="notes"> contains presenter notes and never renders on the slide.',
-      '- /deck.json transition must be "slide", "fade", or "none".',
-      '- Put shared visual decisions in /theme.css: tokens on :root, layouts such as layout-cover/layout-split/layout-statement/layout-grid, and components such as data-card/stat/eyebrow/lead. Prefer theme classes to inline styles; self-host fonts under /assets/fonts with @font-face.',
-      '- You cannot delete files. To remove or rename a slide, update the slides array in /deck.json; previously existing slide files no longer referenced by the manifest are pruned automatically after your run. Prefer inserting new slides without renumbering existing files unless the user asks for a reorder.',
-      '- CRITICAL: any slide file you create is invisible until /deck.json lists it. Whenever you add, remove, or rename a slide file, update /deck.json in the same run and verify the write succeeded (re-read it if unsure). If an edit_file call fails, rewrite the whole file with write_file.',
-      'Use read_file, write_file, edit_file, ls, glob, and grep to inspect and modify files.',
-      '- Changes ONLY count when made through write_file or edit_file tool calls. Never claim an edit you did not perform with a tool — a run that modifies no files is treated as a failure. The file contents shown in the request are for reference; restating them is not editing.',
-      'Return structured output with summary and changedFiles.',
-      `Deck id: ${deck.meta.id}`,
-    ];
-    if (roleScope === 'admin') {
-      return [
-        ...shared,
-        'Admin scope: you may restructure the theme and slide set freely within the rules above.',
-      ].join('\n');
-    }
-    return [
-      ...shared,
-      'Member scope: content and presentation edits only; do not add new asset files other than under /assets/.',
-    ].join('\n');
-  }
-
   const shared = [
-    'You edit Slidev decks using filesystem tools.',
+    'You edit a static HTML slide deck using filesystem tools.',
     'Use virtual filesystem paths rooted at the deck directory.',
-    'The primary file is /slides.md.',
-    'Return structured output with markdown and summary.',
+    '- Editable deck files are /deck.json (manifest), /slides/*.html (one section fragment per slide), /theme.css, and files under /assets/.',
+    '- NEVER touch /index.html, /runtime.js, /runtime.css (the runtime shell), /slides.md, /package.json, or /meta.json.',
+    '- Slides render on a fixed 1280x720 px stage. Design in px, never vw/vh, and ensure content neither overflows nor scrolls.',
+    '- Each slide file must contain exactly one <section class="slide ..." data-title="..."> fragment: no html/head/body wrappers, <script>, or external CDN/font/asset URLs. Decks are self-contained.',
+    '- Slide order lives in the slides array of /deck.json. Keep NN-slug.html filenames and the manifest synchronized when adding, removing, or reordering slides.',
+    '- data-click progressively reveals an element: bare values auto-increment, while data-click="3" pins step 3. <aside class="notes"> contains presenter notes and never renders on the slide.',
+    '- /deck.json transition must be "slide", "fade", or "none".',
+    '- Put shared visual decisions in /theme.css: tokens on :root, layouts such as layout-cover/layout-split/layout-statement/layout-grid, and components such as data-card/stat/eyebrow/lead. Prefer theme classes to inline styles; self-host fonts under /assets/fonts with @font-face.',
+    '- You cannot delete files. To remove or rename a slide, update the slides array in /deck.json; previously existing slide files no longer referenced by the manifest are pruned automatically after your run. Prefer inserting new slides without renumbering existing files unless the user asks for a reorder.',
+    '- CRITICAL: any slide file you create is invisible until /deck.json lists it. Whenever you add, remove, or rename a slide file, update /deck.json in the same run and verify the write succeeded (re-read it if unsure). If an edit_file call fails, rewrite the whole file with write_file.',
+    'Use read_file, write_file, edit_file, ls, glob, and grep to inspect and modify files.',
+    '- Changes ONLY count when made through write_file or edit_file tool calls. Never claim an edit you did not perform with a tool — a run that modifies no files is treated as a failure. The file contents shown in the request are for reference; restating them is not editing.',
+    'Return structured output with summary and changedFiles.',
     `Deck id: ${deck.meta.id}`,
   ];
   if (roleScope === 'admin') {
     return [
       ...shared,
-      'Admin scope: you may edit deck content, theme code, layouts, components, and dependency metadata inside the deck root.',
+      'Admin scope: you may restructure the theme and slide set freely within the rules above.',
     ].join('\n');
   }
   return [
     ...shared,
-    'Member scope: content-only. Do not edit theme code, package metadata, setup files, Vite config, hidden files, or Vue components.',
+    'Member scope: content and presentation edits only; do not add new asset files other than under /assets/.',
   ].join('\n');
 }
 
-export function permissionsForRole(roleScope: 'admin' | 'member', kind: 'slidev' | 'workspace' = 'slidev'): FilesystemPermission[] {
-  if (kind === 'workspace') {
-    return [
-      { operations: ['write'], paths: ['/index.html', '/runtime.js', '/runtime.css', '/package.json', '/package-lock.json', '/meta.json', '/slides.md', '/setup/**', '/vite.config.*', '/node_modules/**', '/dist/**', '/.*', '/**/.*'], mode: 'deny' },
-      { operations: ['write'], paths: ['/deck.json', '/theme.css', '/slides/**', '/assets/**', '/public/**'], mode: 'allow' },
-      { operations: ['write'], paths: ['/**'], mode: 'deny' },
-      { operations: ['read'], paths: ['/**'], mode: 'allow' },
-    ];
-  }
-
-  if (roleScope === 'admin') {
-    return [
-      { operations: ['read', 'write'], paths: ['/**'], mode: 'allow' },
-    ];
-  }
+export function permissionsForRole(_roleScope: 'admin' | 'member'): FilesystemPermission[] {
   return [
-    { operations: ['write'], paths: ['/theme/**', '/package.json', '/package-lock.json', '/setup/**', '/vite.config.*', '/**/*.vue', '/.*', '/**/.*'], mode: 'deny' },
-    { operations: ['write'], paths: ['/slides.md', '/public/**', '/assets/**', '/slides/*.md'], mode: 'allow' },
+    { operations: ['write'], paths: ['/index.html', '/runtime.js', '/runtime.css', '/package.json', '/package-lock.json', '/meta.json', '/slides.md', '/setup/**', '/vite.config.*', '/node_modules/**', '/dist/**', '/.*', '/**/.*'], mode: 'deny' },
+    { operations: ['write'], paths: ['/deck.json', '/theme.css', '/slides/**', '/assets/**', '/public/**'], mode: 'allow' },
     { operations: ['write'], paths: ['/**'], mode: 'deny' },
     { operations: ['read'], paths: ['/**'], mode: 'allow' },
   ];
@@ -384,35 +327,16 @@ async function parseDeepAgentResult(
   const structured = record.structuredResponse ?? record.structured_response ?? record.response;
   const candidate = structured && typeof structured === 'object' ? structured as Record<string, unknown> : record;
 
-  if (isWorkspaceDeck(deck)) {
-    await pruneOrphanSlides(deckRoot, beforeWorkspace);
-    // Trust only the disk diff. The model's self-reported changedFiles can
-    // claim edits that never reached disk (observed with edit_file failures);
-    // counting them would let a no-op run pass for a successful one.
-    const changedFiles = await changedWorkspaceFiles(deckRoot, beforeWorkspace);
-    return {
-      mode: 'workspace',
-      changedFiles,
-      summary: typeof candidate.summary === 'string' && candidate.summary.trim() ? candidate.summary.trim() : 'Updated the deck workspace.',
-    };
-  }
-
-  if (typeof candidate.markdown !== 'string' || !candidate.markdown.trim()) {
-    throw Object.assign(new Error('Deep agent did not return markdown'), { statusCode: 502 });
-  }
+  await pruneOrphanSlides(deckRoot, beforeWorkspace);
+  // Trust only the disk diff. The model's self-reported changedFiles can
+  // claim edits that never reached disk (observed with edit_file failures);
+  // counting them would let a no-op run pass for a successful one.
+  const changedFiles = await changedWorkspaceFiles(deckRoot, beforeWorkspace);
   return {
-    mode: 'markdown',
-    markdown: candidate.markdown,
-    summary: typeof candidate.summary === 'string' && candidate.summary.trim() ? candidate.summary.trim() : 'Updated the deck.',
+    mode: 'workspace',
+    changedFiles,
+    summary: typeof candidate.summary === 'string' && candidate.summary.trim() ? candidate.summary.trim() : 'Updated the deck workspace.',
   };
-}
-
-function deckKind(deck: DeckRecord): 'slidev' | 'workspace' {
-  return isWorkspaceDeck(deck) ? 'workspace' : 'slidev';
-}
-
-function isWorkspaceDeck(deck: DeckRecord): boolean {
-  return Boolean(deck.meta.draftUrl?.startsWith('/runtime/')) || deck.meta.scaffoldKey === 'custom-html';
 }
 
 /**

@@ -85,7 +85,7 @@ const betterContext = await auth.currentUser({
 if (betterContext?.user.role !== 'admin') throw new Error('better-auth cookie did not resolve admin user');
 
 const legacyContext = await auth.currentUser({
-  headers: { cookie: `slidev_session=${rawToken}` },
+  headers: { cookie: `deckhand_session=${rawToken}` },
   params: {},
   urlObject: new URL('http://localhost/'),
 });
@@ -99,7 +99,7 @@ const tampered = await auth.currentUser({
 if (tampered) throw new Error('tampered better-auth cookie should not resolve');
 
 await auth.logout({
-  headers: { cookie: `slidev_session=${rawToken}; better-auth.session_token=${encodeURIComponent(betterCookieValue)}` },
+  headers: { cookie: `deckhand_session=${rawToken}; better-auth.session_token=${encodeURIComponent(betterCookieValue)}` },
   params: {},
   urlObject: new URL('http://localhost/'),
 });

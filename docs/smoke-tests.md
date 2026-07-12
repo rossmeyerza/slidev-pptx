@@ -1,25 +1,5 @@
 # Smoke Tests
 
-## Basic Scaffold
-
-The basic v1 scaffold lives in `themes/basic`. It is intentionally dependency-free in this repo and expects a Slidev CLI to be supplied by the caller when publish/export checks are run.
-
-Run the scaffold smoke test:
-
-```sh
-scripts/smoke-basic.sh
-```
-
-The script expects the repo's existing Node dependencies to be installed before converter build/export checks run.
-
-The script checks:
-
-- create deck: copies `themes/basic` to `/tmp/slidev-agent-platform-basic-smoke/basic` and verifies `slides.md`, `package.json`, and the local SVG asset
-- publish: runs `slidev build slides.md --out dist` when `slidev` or `npx --no-install slidev` is available
-- PPTX export: starts the same local Slidev CLI, exports with `bin/slidev-to-pptx.js`, and verifies with `bin/slidev-to-pptx-verify.js --slides 5 --scale 2`
-
-If Slidev is not installed locally or on `PATH`, the script still validates the scaffold and builds the converter, then skips publish/export without downloading dependencies.
-
 ## App Shell
 
 Run the product app smoke test:
@@ -28,11 +8,19 @@ Run the product app smoke test:
 scripts/smoke-app.sh
 ```
 
-The script starts an isolated server using temp data under `/tmp`, disables `.env.local` loading so SMTP is not used, starts a fake OpenAI-compatible model endpoint for admin model-list checks, verifies the migration command is a safe no-op without `DATABASE_URL`, logs in through the dev magic-link response, creates a deck from `themes/commercial-profile`, verifies the commercial theme files were copied, creates a public client share link, verifies `/client/:token` serves the React client shell while legacy `/share/:token` routes still work, verifies an unrelated employee is denied until added as a viewer collaborator, and verifies the deck and preview APIs are auth-gated.
+The script starts an isolated server using temp data under `/tmp`, disables
+`.env.local` loading so SMTP is not used, starts a fake OpenAI-compatible model
+endpoint for admin model-list checks, verifies the migration command is a safe
+no-op without `DATABASE_URL`, logs in through the dev magic-link response,
+creates HTML decks from `themes/custom-html` and `themes/commercial-html`,
+creates a public client share link, verifies `/client/:token` serves the React
+client shell while `/share/:token` serves the HTML runtime, verifies an
+unrelated employee is denied until added as a viewer collaborator, and verifies
+the deck and preview APIs are auth-gated.
 
 The admin-tools section checks component creation under `theme/components`,
 layout creation under `theme/layouts`, dependency updates in `package.json`
-without running install, invalid package-name rejection, draft-rebuild trigger,
+without running install, invalid package-name rejection, runtime refresh,
 per-deck deepagents model provider overrides, and the employee 403 boundary for
 the same admin-only endpoints. The lock section verifies member instruction
 guards reject filesystem and package-management requests before model execution.
@@ -45,11 +33,9 @@ The app smoke also runs with `DECKS_DOMAIN=decks.smoke.test` and checks that
 `<deck-id>.decks.smoke.test` is auth-gated and serves the authenticated deck
 preview through Express host routing.
 
-`npm run smoke:exporter` uses fake built `slidev-to-pptx` and verifier CLIs to
-check that PPTX exports are queued according to `EXPORT_CONCURRENCY`, that two
-jobs run serially when concurrency is `1`, that interrupted queued/running jobs
-are failed on startup, and that verifier slide/image counts are recorded on the
-completed export job.
+`npm run smoke:exporter` checks that interrupted queued/running export jobs are
+failed on startup. `npm run smoke:export-html` exports the HTML runtime to PPTX
+and PDF and verifies slide, image, and screenshot dimensions.
 
 ## Postgres auth smoke
 
@@ -66,7 +52,7 @@ as an org admin member.
 
 `npm run smoke:auth-bridge` does not require Postgres. It uses a fake pool to
 verify that the API auth layer accepts signed `better-auth.session_token`
-cookies, still accepts legacy `slidev_session` cookies, rejects tampered
+cookies, still accepts compatibility `deckhand_session` cookies, rejects tampered
 better-auth cookies, and deletes both raw and hashed session-token forms on
 logout.
 

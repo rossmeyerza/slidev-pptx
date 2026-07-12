@@ -1,13 +1,11 @@
 import type { AppConfig, DeckAgentSettings, DeckCollaboratorRecord, DeckRecord, ExportFormat, ExportJob, ShareRecord, ShareVisitorRecord, UserRecord, UserRole } from '../core/types.js';
 import { DeckStore } from '../decks/decks.js';
 import { ExportService } from '../export/exporter.js';
-import { ImportService } from '../export/importer.js';
 import http from 'node:http';
 import type { ServerResponse } from 'node:http';
 import path from 'node:path';
 import { Router, sendFile, sendHtml, sendInlineFile, sendJson, type JsonRequest } from '../core/http.js';
 import { ShareService } from '../decks/share.js';
-import { SlidevBuildService } from '../preview/slidevBuild.js';
 import { AuthService } from '../auth/auth.js';
 import { agentApiKey, agentRunConfig, runDeckEditAgent } from '../agent/agent.js';
 import type { PgPool } from '../db/db.js';
@@ -35,8 +33,6 @@ export function createApiRouter(
   const chat = new ChatService(config, pool);
   const agentRuns = new AgentRunService(config, pool);
   const exports = new ExportService(config, decks, logger);
-  const imports = new ImportService(config, decks);
-  const slidev = new SlidevBuildService(config, decks);
   const auth = new AuthService(config, pool);
   const settings = new SettingsService(config);
   const adminTools = new AdminToolService(decks);
@@ -231,32 +227,17 @@ export function createApiRouter(
     await decks.assertScaffoldAvailable(optionalString(body.scaffold) ?? config.scaffoldKey, context.user.role);
     const deck = await decks.create({
       title: optionalString(body.title),
-      markdown: optionalString(body.markdown),
       scaffold: optionalString(body.scaffold),
       ownerUserId: context.user.id,
     });
-    scheduleDraftBuildIfNeeded(slidev, deck);
-    sendJson(res, 201, await formatDeck(deck, await shares.sharesForDeck(deck.meta.id), chat, decks, slidev));
-  });
-
-  router.add('POST', '/api/imports/pptx', async (req, res) => {
-    const context = await auth.requireAdmin(req);
-    const body = asObject(req.body);
-    const deck = await imports.importPptx({
-      filename: optionalString(body.filename),
-      contentBase64: requiredString(body.contentBase64, 'contentBase64'),
-      title: optionalString(body.title),
-      ownerUserId: context.user.id,
-    });
-    scheduleDraftBuild(slidev, deck.meta.id);
-    sendJson(res, 201, await formatDeck(deck, await shares.sharesForDeck(deck.meta.id), chat, decks, slidev));
+    sendJson(res, 201, await formatDeck(deck, await shares.sharesForDeck(deck.meta.id), chat, decks));
   });
 
   router.add('GET', '/api/decks/:id', async (req, res) => {
     const context = await auth.requireUser(req);
     await requireDeckAccess(decks, collaborators, req.params.id, context.user, 'view');
     const deck = await decks.get(req.params.id);
-    sendJson(res, 200, await formatDeck(deck, await shares.sharesForDeck(req.params.id), chat, decks, slidev));
+    sendJson(res, 200, await formatDeck(deck, await shares.sharesForDeck(req.params.id), chat, decks));
   });
 
   router.add('PUT', '/api/decks/:id', async (req, res) => {
@@ -266,19 +247,16 @@ export function createApiRouter(
     const body = asObject(req.body);
     const deck = await decks.update(req.params.id, {
       title: optionalString(body.title),
-      markdown: optionalString(body.markdown),
     });
     runtimeEvents.emit(deck.meta.id);
-    scheduleDraftBuildIfNeeded(slidev, deck);
-    sendJson(res, 200, await formatDeck(deck, await shares.sharesForDeck(req.params.id), chat, decks, slidev));
+    sendJson(res, 200, await formatDeck(deck, await shares.sharesForDeck(req.params.id), chat, decks));
   });
 
   router.add('POST', '/api/decks/:id/duplicate', async (req, res) => {
     const context = await auth.requireUser(req);
     await requireDeckAccess(decks, collaborators, req.params.id, context.user, 'edit');
     const deck = await decks.duplicate(req.params.id, context.user.id);
-    scheduleDraftBuildIfNeeded(slidev, deck);
-    sendJson(res, 201, await formatDeck(deck, [], chat, decks, slidev));
+    sendJson(res, 201, await formatDeck(deck, [], chat, decks));
   });
 
   router.add('POST', '/api/decks/:id/template', async (req, res) => {
@@ -314,7 +292,6 @@ export function createApiRouter(
     if (typeof body.content !== 'string') throw Object.assign(new Error('content is required'), { statusCode: 400 });
     await decks.writeEditableFile(req.params.id, requestedPath, body.content);
     runtimeEvents.emit(req.params.id, [requestedPath]);
-    scheduleDraftBuildIfNeeded(slidev, await decks.get(req.params.id));
     sendJson(res, 200, { ok: true });
   });
 
@@ -324,8 +301,7 @@ export function createApiRouter(
     await decks.requireEditLock(req.params.id, context.user.id);
     const deck = await recordInstruction(config, decks, chat, agentRuns, req.params.id, asObject(req.body), context.user);
     runtimeEvents.emit(deck.meta.id);
-    scheduleDraftBuildIfNeeded(slidev, deck);
-    sendJson(res, 200, await formatDeck(deck, await shares.sharesForDeck(req.params.id), chat, decks, slidev));
+    sendJson(res, 200, await formatDeck(deck, await shares.sharesForDeck(req.params.id), chat, decks));
   });
 
   router.add('POST', '/api/decks/:id/revert', async (req, res) => {
@@ -337,8 +313,7 @@ export function createApiRouter(
     await chat.append(req.params.id, [{ role: 'agent', content: 'Reverted the last agent change.', createdAt: new Date().toISOString() }]);
     const deck = await decks.get(req.params.id);
     runtimeEvents.emit(req.params.id);
-    scheduleDraftBuildIfNeeded(slidev, deck);
-    sendJson(res, 200, await formatDeck(deck, await shares.sharesForDeck(req.params.id), chat, decks, slidev));
+    sendJson(res, 200, await formatDeck(deck, await shares.sharesForDeck(req.params.id), chat, decks));
   });
 
   router.add('POST', '/api/decks/:id/assets', async (req, res) => {
@@ -377,8 +352,7 @@ export function createApiRouter(
     await decks.requireEditLock(req.params.id, context.user.id);
     const deck = await recordInstruction(config, decks, chat, agentRuns, req.params.id, asObject(req.body), context.user);
     runtimeEvents.emit(deck.meta.id);
-    scheduleDraftBuildIfNeeded(slidev, deck);
-    sendJson(res, 200, await formatDeck(deck, await shares.sharesForDeck(req.params.id), chat, decks, slidev));
+    sendJson(res, 200, await formatDeck(deck, await shares.sharesForDeck(req.params.id), chat, decks));
   });
 
   router.add('POST', '/api/decks/:id/messages', async (req, res) => {
@@ -402,8 +376,7 @@ export function createApiRouter(
         }
       });
       runtimeEvents.emit(deck.meta.id);
-      scheduleDraftBuildIfNeeded(slidev, deck);
-      sendSse(res, 'done', { deck: await formatDeck(deck, await shares.sharesForDeck(req.params.id), chat, decks, slidev) });
+      sendSse(res, 'done', { deck: await formatDeck(deck, await shares.sharesForDeck(req.params.id), chat, decks) });
     } catch (error) {
       sendSse(res, 'error', { error: error instanceof Error ? error.message : 'Instruction failed' });
     } finally {
@@ -415,12 +388,6 @@ export function createApiRouter(
     const context = await auth.requireUser(req);
     await requireDeckAccess(decks, collaborators, req.params.id, context.user, 'view');
     sendJson(res, 200, { runs: await agentRuns.list(req.params.id) });
-  });
-
-  router.add('GET', '/api/decks/:id/preview-build', async (req, res) => {
-    const context = await auth.requireUser(req);
-    await requireDeckAccess(decks, collaborators, req.params.id, context.user, 'view');
-    sendJson(res, 200, { previewBuild: await slidev.status(req.params.id, 'draft') });
   });
 
   router.add('POST', '/api/decks/:id/runs/:runId/cancel', async (req, res) => {
@@ -450,13 +417,8 @@ export function createApiRouter(
   router.add('POST', '/api/decks/:id/live', async (req, res) => {
     const context = await auth.requireUser(req);
     await requireDeckAccess(decks, collaborators, req.params.id, context.user, 'view');
-    const deck = await decks.get(req.params.id);
-    if (isCustomRuntimeDeck(deck)) {
-      sendJson(res, 200, { preview: customRuntimePreview(deck.meta.id) });
-      return;
-    }
-    scheduleDraftBuild(slidev, deck.meta.id);
-    sendJson(res, 200, { preview: draftBuildPreview(config, deck.meta.id) });
+    await decks.get(req.params.id);
+    sendJson(res, 200, { preview: runtimePreview(req.params.id) });
   });
 
   router.add('POST', '/api/decks/:id/admin-tools/components', async (req, res) => {
@@ -468,7 +430,6 @@ export function createApiRouter(
       source: optionalString(body.source),
     });
     runtimeEvents.emit(req.params.id);
-    scheduleDraftBuild(slidev, req.params.id);
     sendJson(res, 201, { file });
   });
 
@@ -481,7 +442,6 @@ export function createApiRouter(
       source: optionalString(body.source),
     });
     runtimeEvents.emit(req.params.id);
-    scheduleDraftBuild(slidev, req.params.id);
     sendJson(res, 201, { file });
   });
 
@@ -495,15 +455,13 @@ export function createApiRouter(
       install: body.install === true,
     });
     runtimeEvents.emit(req.params.id);
-    scheduleDraftBuild(slidev, req.params.id);
     sendJson(res, 200, { dependency });
   });
 
   router.add('POST', '/api/decks/:id/admin-tools/restart-preview', async (req, res) => {
     const context = await auth.requireAdmin(req);
     await requireDeckAccess(decks, collaborators, req.params.id, context.user, 'view');
-    const deck = await decks.get(req.params.id);
-    scheduleDraftBuildIfNeeded(slidev, deck);
+    runtimeEvents.emit(req.params.id);
     sendJson(res, 200, { ok: true });
   });
 
@@ -643,9 +601,8 @@ export function createApiRouter(
     const body = withShareVisitorInstruction(asObject(req.body), visitor);
     const updated = await recordInstruction(config, decks, chat, agentRuns, deck.meta.id, body, shareVisitorUser(visitor));
     runtimeEvents.emit(updated.meta.id);
-    scheduleDraftBuildIfNeeded(slidev, updated);
     sendJson(res, 200, {
-      ...(await formatDeck(updated, [], chat, decks, slidev)),
+      ...(await formatDeck(updated, [], chat, decks)),
       previewUrl: `/share/${encodeURIComponent(req.params.token)}/deck/#/1`,
       share: formatShare(share),
       visitor,
@@ -653,12 +610,7 @@ export function createApiRouter(
   });
 
   const sendSharedDeckFile = async (res: ServerResponse, deck: DeckRecord, requestPath: string) => {
-    if (isCustomRuntimeDeck(deck)) {
-      await sendRuntimeFile(res, runtimeShellDir, decks.deckPath(deck.meta.id), requestPath);
-      return;
-    }
-    const outDir = await slidev.ensureBuilt(deck.meta.id, 'draft');
-    await sendSlidevStatic(res, outDir, requestPath);
+    await sendRuntimeFile(res, runtimeShellDir, decks.deckPath(deck.meta.id), requestPath);
   };
 
   router.add('GET', '/share/:token', async (req, res) => {
@@ -715,7 +667,6 @@ export function createApiRouter(
     const context = await auth.requireUser(req);
     await requireDeckAccess(decks, collaborators, req.params.id, context.user, 'edit');
     const body = asObject(req.body);
-    await slidev.build(req.params.id, 'published');
     const publish = await shares.publish(req.params.id, optionalString(body.channel) ?? 'local');
     const deck = await decks.get(req.params.id);
     sendJson(res, 200, { publish, deck: await formatDeck(deck, await shares.sharesForDeck(req.params.id), chat, decks) });
@@ -764,29 +715,6 @@ export function createApiRouter(
     runtimeEvents.register(req.params.id, res);
   });
 
-  router.add('GET', '/draft/:id', async (req, res) => {
-    const context = await auth.requireUser(req);
-    await requireDeckAccess(decks, collaborators, req.params.id, context.user, 'view');
-    const deck = await decks.get(req.params.id);
-    const outDir = await slidev.ensureBuilt(deck.meta.id, 'draft');
-    await sendInlineFile(res, path.join(outDir, 'index.html'));
-  });
-
-  router.add('GET', '/draft/:id/', async (req, res) => {
-    const context = await auth.requireUser(req);
-    await requireDeckAccess(decks, collaborators, req.params.id, context.user, 'view');
-    const deck = await decks.get(req.params.id);
-    const outDir = await slidev.ensureBuilt(deck.meta.id, 'draft');
-    await sendInlineFile(res, path.join(outDir, 'index.html'));
-  });
-
-  router.add('GET', '/draft/:id/*path', async (req, res) => {
-    const context = await auth.requireUser(req);
-    await requireDeckAccess(decks, collaborators, req.params.id, context.user, 'view');
-    const outDir = await slidev.ensureBuilt(req.params.id, 'draft');
-    await sendSlidevStatic(res, outDir, req.params.path);
-  });
-
   router.add('GET', '/runtime/:id', async (req, res) => {
     const context = await auth.requireUser(req);
     await requireDeckAccess(decks, collaborators, req.params.id, context.user, 'view');
@@ -804,39 +732,6 @@ export function createApiRouter(
     const context = await auth.requireUser(req);
     await requireDeckAccess(decks, collaborators, req.params.id, context.user, 'view');
     await sendRuntimeFile(res, runtimeShellDir, decks.deckPath(req.params.id), runtimeRequestPath(req.params.path));
-  });
-
-  router.add('GET', '/published/:id', async (req, res) => {
-    const context = await auth.requireUser(req);
-    await requireDeckAccess(decks, collaborators, req.params.id, context.user, 'view');
-    const deck = await decks.get(req.params.id);
-    if (deck.meta.status !== 'published') {
-      throw Object.assign(new Error('Deck is not published'), { statusCode: 404 });
-    }
-    const outDir = await slidev.ensureBuilt(deck.meta.id, 'published');
-    await sendInlineFile(res, path.join(outDir, 'index.html'));
-  });
-
-  router.add('GET', '/published/:id/', async (req, res) => {
-    const context = await auth.requireUser(req);
-    await requireDeckAccess(decks, collaborators, req.params.id, context.user, 'view');
-    const deck = await decks.get(req.params.id);
-    if (deck.meta.status !== 'published') {
-      throw Object.assign(new Error('Deck is not published'), { statusCode: 404 });
-    }
-    const outDir = await slidev.ensureBuilt(deck.meta.id, 'published');
-    await sendInlineFile(res, path.join(outDir, 'index.html'));
-  });
-
-  router.add('GET', '/published/:id/*path', async (req, res) => {
-    const context = await auth.requireUser(req);
-    await requireDeckAccess(decks, collaborators, req.params.id, context.user, 'view');
-    const deck = await decks.get(req.params.id);
-    if (deck.meta.status !== 'published') {
-      throw Object.assign(new Error('Deck is not published'), { statusCode: 404 });
-    }
-    const outDir = await slidev.ensureBuilt(deck.meta.id, 'published');
-    await sendSlidevStatic(res, outDir, req.params.path);
   });
 
   return router;
@@ -863,15 +758,13 @@ export async function handleDeckHostRequest(
   const collaborators = new CollaboratorService(config, pool);
   await requireDeckAccess(decks, collaborators, deckId, context.user, 'view');
 
-  const slidev = new SlidevBuildService(config, decks);
-  const deck = await decks.get(deckId);
-  const mode = deck.meta.status === 'published' ? 'published' : 'draft';
-  const outDir = await slidev.ensureBuilt(deckId, mode);
-  if (urlObject.pathname === '/' || urlObject.pathname === '') {
-    await sendInlineFile(res, path.join(outDir, 'index.html'));
-    return true;
-  }
-  await sendSlidevStatic(res, outDir, urlObject.pathname.replace(/^\//, ''));
+  await decks.get(deckId);
+  await sendRuntimeFile(
+    res,
+    path.join(config.repoRoot, 'runtime'),
+    decks.deckPath(deckId),
+    urlObject.pathname.replace(/^\//, ''),
+  );
   return true;
 }
 
@@ -1148,11 +1041,11 @@ function shareEditWorkbenchHtml(token: string, title: string, visitor: ShareVisi
 }
 
 function shareVisitorCookieName(token: string): string {
-  return `slidev_share_${token.replace(/[^a-zA-Z0-9_-]/g, '')}`;
+  return `deckhand_share_${token.replace(/[^a-zA-Z0-9_-]/g, '')}`;
 }
 
 function sharePasswordCookieName(token: string): string {
-  return `slidev_share_pw_${token.replace(/[^a-zA-Z0-9_-]/g, '')}`;
+  return `deckhand_share_pw_${token.replace(/[^a-zA-Z0-9_-]/g, '')}`;
 }
 
 function shareVisitorCookie(token: string, visitorId: string): string {
@@ -1184,7 +1077,6 @@ async function formatDeck(
   deckShares: Awaited<ReturnType<ShareService['sharesForDeck']>>,
   chat: ChatService,
   decks: DeckStore,
-  slidev?: SlidevBuildService,
 ) {
   const messages = await chat.list(deck.meta.id);
   return {
@@ -1197,42 +1089,14 @@ async function formatDeck(
     agent: formatDeckAgentSettings(undefined, deck.meta.agent),
     pptx: deck.meta.pptx,
     snapshots: await decks.listSnapshots(deck.meta.id),
-    previewBuild: slidev ? await slidev.status(deck.meta.id, 'draft') : undefined,
   };
 }
 
-function scheduleDraftBuild(slidev: SlidevBuildService, deckId: string): void {
-  slidev.buildInBackground(deckId, 'draft');
-}
-
-function scheduleDraftBuildIfNeeded(slidev: SlidevBuildService, deck: DeckRecord): void {
-  if (isCustomRuntimeDeck(deck)) return;
-  scheduleDraftBuild(slidev, deck.meta.id);
-}
-
-function isCustomRuntimeDeck(deck: DeckRecord): boolean {
-  return Boolean(deck.meta.draftUrl?.startsWith('/runtime/')) || deck.meta.scaffoldKey === 'custom-html';
-}
-
-function customRuntimePreview(deckId: string) {
+function runtimePreview(deckId: string) {
   return {
     deckId,
     url: `/runtime/${deckId}/#/1`,
     status: 'running',
-    startedAt: new Date().toISOString(),
-    lastActivityAt: Date.now(),
-    restartAttempts: 0,
-  };
-}
-
-function draftBuildPreview(config: AppConfig, deckId: string) {
-  const url = config.decksDomain
-    ? `${config.publicBaseUrl.startsWith('https://') ? 'https' : 'http'}://${deckId}.${config.decksDomain}/#/1`
-    : draftDeckUrl(deckId);
-  return {
-    deckId,
-    url,
-    status: 'draft',
     startedAt: new Date().toISOString(),
     lastActivityAt: Date.now(),
     restartAttempts: 0,
@@ -1303,18 +1167,17 @@ function formatShare(share: ShareRecord): ShareRecord {
 }
 
 function normalizeDraftDeckUrl(id: string, url?: string) {
-  if (!url || !url.includes('#/')) return draftDeckUrl(id);
-  return url;
+  if (url?.startsWith('/runtime/') && url.includes('#/')) return url;
+  return runtimeDeckUrl(id);
 }
 
 function normalizePublishedDeckUrl(id: string, url?: string) {
   if (!url) return undefined;
-  if (!url.includes('#/')) return `/published/${id}/#/1`;
-  return url;
+  return runtimeDeckUrl(id);
 }
 
-function draftDeckUrl(id: string) {
-  return `/draft/${id}/#/1`;
+function runtimeDeckUrl(id: string) {
+  return `/runtime/${id}/#/1`;
 }
 
 function deckIdFromHost(config: AppConfig, hostHeader: string | undefined): string | undefined {
@@ -1387,7 +1250,7 @@ async function recordInstruction(
       onEvent: (event, data) => emit?.(event, { ...(typeof data === 'object' && data !== null ? data as Record<string, unknown> : { value: data }), runId: run.id }),
     });
     emit?.('status', { status: 'writing_file', runId: run.id });
-    const updatedDeck = await applyAgentEditResult(decks, deck, id, result, emit, run.id);
+    const updatedDeck = await applyAgentEditResult(decks, id, result, emit, run.id);
     const messages = [
       { role: 'user' as const, content: `${instruction.trim()}${target.slideNumber ? ` (slide ${target.slideNumber})` : ''}`, createdAt: now },
       {
@@ -1413,7 +1276,7 @@ async function targetedInstruction(
   requested: unknown,
   instruction: string,
 ): Promise<{ agentInstruction: string; slideNumber?: number }> {
-  if (!isCustomRuntimeDeck(deck) || requested === undefined || requested === null || requested === '') return { agentInstruction: instruction };
+  if (requested === undefined || requested === null || requested === '') return { agentInstruction: instruction };
   const slideNumber = Number(requested);
   if (!Number.isInteger(slideNumber) || slideNumber < 1) throw Object.assign(new Error('targetSlide must be a positive integer'), { statusCode: 400 });
   const manifest = JSON.parse(await fs.readFile(path.join(decks.deckPath(deck.meta.id), 'deck.json'), 'utf8')) as { slides?: unknown };
@@ -1445,33 +1308,20 @@ async function changedFilesSummary(decks: DeckStore, id: string, changedFiles: s
 
 async function applyAgentEditResult(
   decks: DeckStore,
-  deck: Awaited<ReturnType<DeckStore['get']>>,
   id: string,
   result: Awaited<ReturnType<typeof runDeckEditAgent>>,
   emit: ((event: string, data: unknown) => void) | undefined,
   runId: string,
 ): Promise<Awaited<ReturnType<DeckStore['get']>>> {
-  if (result.mode === 'workspace') {
-    const changedFiles = result.changedFiles ?? [];
-    if (!changedFiles.length) {
-      throw Object.assign(new Error('The agent finished without changing any deck files. Re-send or rephrase the instruction.'), { statusCode: 502 });
-    }
-    for (const file of changedFiles) {
-      emit?.('file_change', { path: file.replace(/^\//, ''), deckId: id, runId });
-    }
-    await decks.updateMeta(id, {});
-    return decks.get(id);
+  const changedFiles = result.changedFiles ?? [];
+  if (!changedFiles.length) {
+    throw Object.assign(new Error('The agent finished without changing any deck files. Re-send or rephrase the instruction.'), { statusCode: 502 });
   }
-
-  if (!result.markdown?.trim()) {
-    throw Object.assign(new Error('Agent did not return markdown'), { statusCode: 502 });
+  for (const file of changedFiles) {
+    emit?.('file_change', { path: file.replace(/^\//, ''), deckId: id, runId });
   }
-  if (result.markdown.trim() === deck.markdown.trim()) {
-    throw Object.assign(new Error('Agent returned unchanged markdown'), { statusCode: 502 });
-  }
-  const updatedDeck = await decks.update(id, { markdown: result.markdown });
-  emit?.('file_change', { path: 'slides.md', deckId: id, runId });
-  return updatedDeck;
+  await decks.updateMeta(id, {});
+  return decks.get(id);
 }
 
 function sendSse(res: ServerResponse, event: string, data: unknown): void {
@@ -1621,19 +1471,6 @@ function safeStaticPath(root: string, requestPath: string): string {
     throw Object.assign(new Error('Invalid static path'), { statusCode: 400 });
   }
   return resolved;
-}
-
-async function sendSlidevStatic(res: Parameters<typeof sendInlineFile>[0], outDir: string, requestPath: string) {
-  const filePath = safeStaticPath(outDir, requestPath);
-  try {
-    await sendInlineFile(res, filePath);
-  } catch (error) {
-    if (error instanceof Error && 'code' in error && (error as NodeJS.ErrnoException).code === 'ENOENT') {
-      await sendInlineFile(res, path.join(outDir, 'index.html'));
-      return;
-    }
-    throw error;
-  }
 }
 
 /** Shell files are always served from the canonical runtime dir so every deck

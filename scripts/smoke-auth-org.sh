@@ -73,7 +73,7 @@ const decks = new DeckStore({
   ...config,
   repoRoot: root,
   decksDir: '/tmp/slidev-auth-org-smoke/decks',
-  scaffoldKey: 'commercial-profile',
+  scaffoldKey: 'commercial-html',
 }, pool);
 const appOrgId = await decks.configuredOrgId();
 if (appOrgId !== '00000000-0000-4000-8000-000000000123') throw new Error(`configured app org id was not returned: ${appOrgId}`);

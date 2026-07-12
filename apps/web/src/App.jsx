@@ -53,11 +53,9 @@ import {
   getDeckAgentSettings,
   getAdminSettings,
   getExport,
-  getPreviewBuild,
   getSharedDeck,
   getSession,
   identifyShareVisitor,
-  importPptxDeck,
   inviteUser,
   listCollaborators,
   listDecks,
@@ -99,14 +97,14 @@ export function App() {
   const [selectedDeckId, setSelectedDeckId] = useState('');
   const [exportJobs, setExportJobs] = useState({});
   const [theme, setTheme] = useState(() => {
-    try { return localStorage.getItem('slidev-agent-theme') ?? 'light'; } catch { return 'light'; }
+    try { return localStorage.getItem('deckhand-theme') ?? 'light'; } catch { return 'light'; }
   });
 
   const toggleTheme = () => {
     const next = theme === 'dark' ? 'light' : 'dark';
     document.documentElement.setAttribute('data-bs-theme', next);
     setTheme(next);
-    try { localStorage.setItem('slidev-agent-theme', next); } catch {}
+    try { localStorage.setItem('deckhand-theme', next); } catch {}
   };
 
   const session = useQuery({
@@ -247,14 +245,6 @@ export function App() {
             onCreate={async (input) => {
               const deck = await createDeck({ ...input, source: 'react-web-v1' });
               refreshDeck(deck);
-              await queryClient.invalidateQueries({ queryKey: queryKeys.previewBuild(deck.id) });
-              setSelectedDeckId(deck.id);
-              setView('detail');
-            }}
-            onImport={async (input) => {
-              const deck = await importPptxDeck(input);
-              refreshDeck(deck);
-              await queryClient.invalidateQueries({ queryKey: queryKeys.previewBuild(deck.id) });
               setSelectedDeckId(deck.id);
               setView('detail');
             }}
@@ -343,7 +333,6 @@ export function App() {
               };
               const result = await actions[action]?.();
               await queryClient.invalidateQueries({ queryKey: queryKeys.livePreview(selectedDeck.id) });
-              await queryClient.invalidateQueries({ queryKey: queryKeys.previewBuild(selectedDeck.id) });
               await queryClient.invalidateQueries({ queryKey: queryKeys.deck(selectedDeck.id) });
               await queryClient.invalidateQueries({ queryKey: queryKeys.scaffolds });
               return result;
@@ -371,7 +360,6 @@ export function App() {
             onSend={async (instruction, onEvent, targetSlide) => {
               if (!selectedDeck) return;
               refreshDeck(await sendInstructionStream(selectedDeck.id, instruction, onEvent, targetSlide));
-              await queryClient.invalidateQueries({ queryKey: queryKeys.previewBuild(selectedDeck.id) });
             }}
             onRevert={async () => {
               if (!selectedDeck) return;
@@ -793,16 +781,12 @@ function Sidebar({ user, decks, selectedDeckId, activeView, onSelectDeck, onView
   );
 }
 
-function DeckDashboard({ user, decks, scaffolds, loading, onSelectDeck, onCreate, onImport }) {
+function DeckDashboard({ user, decks, scaffolds, loading, onSelectDeck, onCreate }) {
   const [title, setTitle] = useState('');
   const [scaffold, setScaffold] = useState('');
   const [audience, setAudience] = useState('');
   const [goal, setGoal] = useState('');
-  const [importTitle, setImportTitle] = useState('');
-  const [importFile, setImportFile] = useState(null);
   const [busy, setBusy] = useState(false);
-  const [importing, setImporting] = useState(false);
-  const [showImport, setShowImport] = useState(false);
   const defaultScaffold = scaffolds.find((item) => item.isDefault)?.key ?? scaffolds[0]?.key ?? '';
   const selectedScaffold = scaffold || defaultScaffold;
   useEffect(() => {
@@ -906,45 +890,6 @@ function DeckDashboard({ user, decks, scaffolds, loading, onSelectDeck, onCreate
               <button className="btn btn-primary w-100" disabled={busy || !selectedScaffold} type="submit">Create</button>
             </div>
           </form>
-          {user?.role === 'admin' ? <div className="border-top pt-3 mt-4">
-            <button type="button" className="btn btn-link btn-sm p-0 text-decoration-none d-inline-flex align-items-center gap-2" aria-expanded={showImport} onClick={() => setShowImport((value) => !value)}>
-              <Icon name="upload" size={16} />
-              {showImport ? 'Hide legacy import' : 'Import PPTX (legacy)'}
-            </button>
-            {showImport ? (
-              <form
-                className="row g-3 align-items-end mt-1"
-                onSubmit={async (event) => {
-                  event.preventDefault();
-                  if (!importFile) return;
-                  setImporting(true);
-                  try {
-                    await onImport({ file: importFile, title: importTitle });
-                    setImportTitle('');
-                    setImportFile(null);
-                    event.currentTarget.reset();
-                  } finally {
-                    setImporting(false);
-                  }
-                }}
-              >
-                <div className="col-12">
-                  <p className="text-body-secondary small mb-0">Imports create a legacy-format deck; expect to refine layout and copy with the agent afterwards.</p>
-                </div>
-                <div className="col-12 col-lg-4">
-                  <label className="form-label" htmlFor="importTitle">Deck title</label>
-                  <input className="form-control" id="importTitle" value={importTitle} onChange={(event) => setImportTitle(event.target.value)} placeholder="Use file name" />
-                </div>
-                <div className="col-12 col-lg-5">
-                  <label className="form-label" htmlFor="importPptx">PowerPoint file</label>
-                  <input className="form-control" id="importPptx" type="file" accept=".pptx,application/vnd.openxmlformats-officedocument.presentationml.presentation" onChange={(event) => setImportFile(event.target.files?.[0] ?? null)} required />
-                </div>
-                <div className="col-12 col-lg-3">
-                  <button className="btn btn-outline-primary w-100" disabled={importing || !importFile} type="submit">{importing ? 'Importing...' : 'Import PPTX'}</button>
-                </div>
-              </form>
-            ) : null}
-          </div> : null}
         </div>
       </div>
 
@@ -1033,20 +978,11 @@ function DeckDetail({ deck, currentUser, loading, exportJob, onWork, onRename, o
   const [renaming, setRenaming] = useState(false);
   const [titleValue, setTitleValue] = useState(deck?.title ?? '');
   useEffect(() => { if (!renaming) setTitleValue(deck?.title ?? ''); }, [deck?.title, renaming]);
-  const previewBuildQuery = useQuery({
-    queryKey: queryKeys.previewBuild(deck?.id ?? ''),
-    queryFn: () => getPreviewBuild(deck.id),
-    enabled: Boolean(deck?.id) && !isCustomRuntimeDeck(deck),
-    refetchInterval: (query) => query.state.data?.status === 'building' ? 2000 : false,
-  });
-
   if (loading) return <p className="text-body-secondary">Loading deck...</p>;
   if (!deck) return <p className="text-body-secondary">Select a deck from the list.</p>;
   const currentExport = exportJob ?? deck.pptx ?? null;
   const exportStatus = currentExport?.status ?? 'not_exported';
   const exportInProgress = exporting || ['queued', 'running'].includes(String(exportStatus).toLowerCase());
-  const previewBuild = previewBuildQuery.data ?? deck.previewBuild ?? null;
-  const customRuntime = isCustomRuntimeDeck(deck);
   const currentExportFormat = currentExport?.format ?? 'pptx';
   const currentExportLabel = currentExportFormat === 'pdf' ? 'PDF' : currentExportFormat === 'markdown' ? 'Markdown' : 'PPTX';
 
@@ -1098,23 +1034,21 @@ function DeckDetail({ deck, currentUser, loading, exportJob, onWork, onRename, o
           >
             {exportInProgress ? 'Exporting...' : 'Export PPTX'}
           </button>
-          {customRuntime ? (
-            <button
-              className="btn btn-outline-secondary"
-              type="button"
-              disabled={exportInProgress}
-              onClick={async () => {
-                setExporting(true);
-                try {
-                  await onExport?.('pdf');
-                } finally {
-                  setExporting(false);
-                }
-              }}
-            >
-              {exportInProgress ? 'Exporting...' : 'Export PDF'}
-            </button>
-          ) : null}
+          <button
+            className="btn btn-outline-secondary"
+            type="button"
+            disabled={exportInProgress}
+            onClick={async () => {
+              setExporting(true);
+              try {
+                await onExport?.('pdf');
+              } finally {
+                setExporting(false);
+              }
+            }}
+          >
+            {exportInProgress ? 'Exporting...' : 'Export PDF'}
+          </button>
         </div>
       </div>
 
@@ -1123,13 +1057,8 @@ function DeckDetail({ deck, currentUser, loading, exportJob, onWork, onRename, o
           <section className="card shadow-sm">
             <div className="card-header d-flex flex-wrap align-items-center justify-content-between gap-2">
               <h3 className="h5 mb-0">Preview</h3>
-              <div className="btn-toolbar gap-2">
-                {customRuntime ? <span className="badge text-bg-success">Custom runtime</span> : null}
-                {!customRuntime && previewBuild ? <span className={`badge ${previewBuildStatusClass(previewBuild.status)}`}>{formatPreviewBuildStatus(previewBuild.status)}</span> : null}
-                {!customRuntime ? <button className="btn btn-outline-secondary btn-sm" type="button" disabled={previewBuildQuery.isFetching} onClick={() => previewBuildQuery.refetch()}>Refresh status</button> : null}
-              </div>
+              <span className="badge text-bg-success">HTML runtime</span>
             </div>
-            {previewBuild?.error ? <section className="alert alert-danger m-3 mb-0 py-2" role="alert">{previewBuild.error}</section> : null}
             <PreviewFrame src={deck.previewUrl} />
           </section>
         </section>
@@ -1431,7 +1360,7 @@ function DeckAdminTools({ deck, onAdminTool, onLoadAgentSettings, onSaveAgentSet
           }}
         >
           <label className="form-label" htmlFor="adminDependencyName">Dependency</label>
-          <input className="form-control" id="adminDependencyName" value={dependencyName} onChange={(event) => setDependencyName(event.target.value)} placeholder="@slidev/client" required />
+          <input className="form-control" id="adminDependencyName" value={dependencyName} onChange={(event) => setDependencyName(event.target.value)} placeholder="package-name" required />
           <input className="form-control" value={dependencyVersion} onChange={(event) => setDependencyVersion(event.target.value)} placeholder="Version or dist tag" />
           <div className="form-check">
             <input className="form-check-input" id="adminDependencyInstall" type="checkbox" checked={installDependency} onChange={(event) => setInstallDependency(event.target.checked)} />
@@ -1492,10 +1421,9 @@ function Workbench({ deck, currentUser, onBack, onSend, onCancel, onRevert, onUp
   }, [deck?.id]);
   if (!deck) return <p className="text-body-secondary">Select a deck first.</p>;
 
-  const customRuntime = isCustomRuntimeDeck(deck);
   const previewUrl = livePreview.data?.url ?? deck.previewUrl;
   const lockedByOther = Boolean(deck.activeEditorUserId && deck.activeEditorUserId !== currentUser?.id);
-  const previewStatus = customRuntime ? 'custom' : livePreview.isError ? 'fallback' : livePreview.isFetching ? 'starting' : 'draft';
+  const previewStatus = livePreview.isError ? 'fallback' : livePreview.isFetching ? 'starting' : 'custom';
 
   return (
     <section>
@@ -2134,25 +2062,6 @@ function previewStatusClass(value) {
   if (value === 'starting') return 'text-bg-warning';
   if (value === 'fallback') return 'text-bg-danger';
   return 'text-bg-secondary';
-}
-
-function formatPreviewBuildStatus(value) {
-  if (value === 'fresh') return 'Cached';
-  if (value === 'building') return 'Building';
-  if (value === 'stale') return 'Cached, rebuilding';
-  if (value === 'failed') return 'Preview failed';
-  return 'Not built';
-}
-
-function previewBuildStatusClass(value) {
-  if (value === 'fresh') return 'text-bg-success';
-  if (value === 'building' || value === 'stale') return 'text-bg-warning';
-  if (value === 'failed') return 'text-bg-danger';
-  return 'text-bg-secondary';
-}
-
-function isCustomRuntimeDeck(deck) {
-  return Boolean(deck?.previewUrl?.startsWith('/runtime/')) || deck?.scaffoldKey === 'custom-html';
 }
 
 function clientShareTokenFromPath(pathname) {

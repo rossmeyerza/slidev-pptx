@@ -18,13 +18,13 @@ npm run build
 
 ## Deckhand platform
 
-This repo now includes a v1 web app around the converter:
+This repo also includes the Deckhand HTML deck platform:
 
 - static UI in `apps/web`
 - Node HTTP server in `apps/server`, with domain code under
-  `src/{agent,api,auth,core,db,decks,export,preview}`
-- commercial-profile scaffold in `themes/commercial-profile`
-- smaller smoke scaffold in `themes/basic`
+  `src/{agent,api,auth,core,db,decks,export}`
+- static HTML deck runtime in `runtime/`
+- HTML scaffolds in `themes/custom-html` and `themes/commercial-html`
 - local JSON/file state under `.data`
 
 For current implementation rules, see `AGENTS.md`. For the current build status,
@@ -47,9 +47,9 @@ Useful environment variables:
 ```sh
 PORT=4545
 HOST=127.0.0.1
-SLIDEV_AGENT_DATA_DIR=.data
-SLIDEV_AGENT_WEB_DIR=apps/web
-DEFAULT_SCAFFOLD=commercial-profile
+DECKHAND_DATA_DIR=.data
+DECKHAND_WEB_DIR=apps/web
+DEFAULT_SCAFFOLD=commercial-html
 DATABASE_URL=
 DATABASE_SSL=false
 LANGGRAPH_SCHEMA=langgraph
@@ -74,15 +74,8 @@ SMTP_SECURE=false
 SMTP_USER=apikey-or-user
 SMTP_PASS=secret
 SMTP_FROM="Deckhand <no-reply@example.com>"
-PORT_POOL_START=5500
-PORT_POOL_END=5599
-MAX_CONCURRENT_DECKS=8
-DECK_IDLE_TIMEOUT_MS=1200000
-DECK_CRASH_RETRY_LIMIT=2
-DECK_CRASH_RETRY_DELAY_MS=1000
 EXPORT_CONCURRENCY=1
 EXPORT_TIMEOUT_MS=180000
-IMPORT_TIMEOUT_MS=60000
 AGENT_BASE_URL=http://127.0.0.1:3033/v1
 AGENT_API_KEY=
 AGENT_MODEL=
@@ -91,18 +84,13 @@ ADMIN_AGENT_MODEL=
 AGENT_TIMEOUT_MS=120000
 ```
 
-The v1 server lists scaffold templates from `themes/` and supports deck creation
-from a selected scaffold, including `themes/commercial-profile`. It also supports draft previews at
-`/draft/:id`, direct localhost Slidev dev-server workbench previews, published
-previews at `/published/:id`, React client share links at `/client/:token`, model-backed
-instruction edits, markdown/PPTX export jobs, and rough PPTX imports. PPTX
-export/import uses the existing built converters, so run `npm run build` first.
-PPTX jobs are queued with `EXPORT_CONCURRENCY` to avoid launching multiple
-Chromium-heavy exports at once. Screenshot-mode PPTX exports run the built
-verifier before being marked succeeded. Queued or running export jobs found at
-server startup are marked failed because v1 export workers are process-local;
-users can retry from the deck. PPTX import subprocesses are bounded by
-`IMPORT_TIMEOUT_MS`.
+The server lists HTML scaffold templates from `themes/`, creates decks as plain
+file workspaces, serves authenticated previews at `/runtime/:id/#/1`, exposes
+React client share links at `/client/:token`, applies model-backed instruction
+edits, and queues flattened PPTX/PDF exports. `EXPORT_CONCURRENCY` limits the
+number of Chromium-heavy exports running at once. Queued or running export jobs
+found at server startup are marked failed because v1 export workers are
+process-local; users can retry from the deck.
 
 HTML-runtime decks are the product's native format. A deck is a folder of
 plain files — `deck.json` (title + ordered slide list), one
@@ -117,29 +105,26 @@ fonts, partner logo cover, stat cards); `commercial-html` is the default for
 new decks. Any scaffold containing a `deck.json` is treated as an HTML-runtime
 scaffold. See `docs/deck-authoring.md` for the authoring conventions.
 
-Previews are static: the authenticated `/api/decks/:id/live` endpoint schedules
-a background draft build and returns the preview URL for the workbench iframe
-(`/runtime/:deckId/#/1` for custom-html decks, `/draft/:deckId/#/1` otherwise).
-There are no per-deck dev servers; draft, published, share, and export flows all
-use static builds (or the file-based custom-html runtime) served by the app.
-The former per-deck Slidev dev-server supervisor and `/live/:id` proxy were
-removed as part of the move to the static HTML deck runtime.
+Previews are static: the authenticated `/api/decks/:id/live` endpoint returns
+`/runtime/:deckId/#/1` for the workbench iframe. There are no per-deck dev
+servers or builds; draft, published, share, deck-host, and export flows all use
+the file-based runtime served by the app.
 
 When `DECKS_DOMAIN` is set, previews return deck-host URLs such as
 `https://<deck-id>.decks.example.com/#/1`. Caddy should terminate the wildcard
 TLS certificate and reverse proxy `*.DECKS_DOMAIN` to the server; Express
 authenticates the cookie, resolves the deck id from the hostname, and serves the
-published build when available, otherwise the draft static build. See
+deck through the HTML runtime. See
 `deploy/Caddyfile.example` for the expected reverse proxy shape. The
 unauthenticated `/internal/tls-check?domain=<deck-host>` endpoint returns 200
 only for configured deck-domain hosts backed by an existing deck, which supports
 Caddy's on-demand TLS `ask` fallback.
 Set `LOG_LEVEL=debug` while running `npm run dev:server` or nodemon directly to
-see build timing, export queue transitions, and per-request HTTP logs.
+see export queue transitions and per-request HTTP logs.
 
 Admins can curate scaffold templates from the Admin screen without editing
 environment variables: display name, description, active status, minimum role,
-and default scaffold are stored in `SLIDEV_AGENT_DATA_DIR/settings.json`.
+and default scaffold are stored in `DECKHAND_DATA_DIR/settings.json`.
 Employees only see active employee-level templates when creating decks.
 The deck dashboard is role-aware: admins see workspace operations metrics
 covering decks, client links, locks/exports, and template availability, while
@@ -147,8 +132,8 @@ employees see a focused summary of their visible decks and active work.
 
 Admins also get deck-local project tools on the deck detail screen. These create
 Vue components under `theme/components`, create custom layouts under
-`theme/layouts`, update deck `package.json` dependencies, and trigger a draft
-preview rebuild. These tools are explicit admin-only endpoints; employee
+`theme/layouts`, update deck `package.json` dependencies, and refresh the deck
+preview. These tools are explicit admin-only endpoints; employee
 and client edit flows remain content-scoped to deck instructions.
 
 Admins can also override agent model settings for a single deck from the same
@@ -170,7 +155,7 @@ activity over the same deck message SSE stream.
 Share links can be created with `view` or `edit` permission. The product-facing
 URL is `/client/:token`, a React client surface that handles optional share
 passwords, visitor identity capture, view-only preview, and edit-request
-workbench. The Slidev iframe itself is served from `/share/:token/deck/#/1`, and
+workbench. The HTML deck iframe is served from `/share/:token/deck/#/1`, and
 the older `/share/:token` gate/workbench pages remain available for
 compatibility. Edit-capable anonymous links require the visitor to enter a
 name/email first; the visitor identity is persisted in Postgres when available
@@ -183,9 +168,9 @@ publishing, exports, and share management.
 
 When `DATABASE_URL` is set, startup and `npm run db:migrate` apply SQL migrations
 from `packages/db-schema`. Deck metadata is written to Postgres while deck working
-files remain on disk under `SLIDEV_AGENT_DATA_DIR/decks`. Share links are also
+files remain on disk under `DECKHAND_DATA_DIR/decks`. Share links are also
 written to Postgres when available. Deck owners and collaborators gate deck APIs,
-draft/published preview routes, exports, and deck-domain requests. In Postgres mode,
+runtime preview routes, exports, and deck-domain requests. In Postgres mode,
 decks are also bound to the configured app org row derived from `AUTH_ORG_NAME`
 and `AUTH_ORG_SLUG`; deck access denies records outside that app org even for
 admins. Chat history is
@@ -216,7 +201,7 @@ The committed Postgres migrations now include the better-auth magic-link,
 organization, and admin schema that will replace the compatibility auth service.
 The better-auth handler is mounted at `/api/better-auth/*` when `DATABASE_URL` is
 configured. Compatibility login also issues `better-auth.session_token`, and the
-deck APIs accept either that signed cookie or the legacy `slidev_session` cookie;
+deck APIs accept either that signed cookie or the compatibility `deckhand_session` cookie;
 this lets the frontend move onto better-auth client APIs incrementally. The React
 app now includes a better-auth client wrapper and uses better-auth magic-link
 requests when both better-auth and SMTP are available; otherwise it falls back to
@@ -224,7 +209,12 @@ the compatibility endpoint, where `AUTH_DEV_LINK=true` can expose local dev link
 Regenerate the committed schema with `npm run auth:schema` after changing
 better-auth plugins or auth schema options.
 
-## Slidev to PPTX
+## Standalone converters (kept, unwired from Deckhand)
+
+The original converter CLIs remain available as independent tools. Deckhand's
+server does not call them.
+
+### Slidev to PPTX
 
 ```sh
 npm run slidev-to-pptx -- /path/to/slides.md output.pptx
@@ -255,7 +245,7 @@ Screenshot rendering is the only export mode. The former `editable`/`hybrid`
 DOM-extraction modes were removed: high-fidelity HTML-to-editable-PPTX is not
 reliably solvable, and this product ships pixel-perfect view-only PPTX instead.
 
-## PPTX to Slidev
+### PPTX to Slidev
 
 ```sh
 npm run pptx-to-slidev -- input.pptx --out ./input-slidev

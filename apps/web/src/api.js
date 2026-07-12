@@ -4,8 +4,7 @@ import { betterAuthSignOut, getBetterAuthSession, requestBetterAuthMagicLink } f
 /**
  * @typedef {{ id:string, email:string, name:string, role:'admin'|'employee', status:string }} User
  * @typedef {{ baseUrl?:string, memberModel?:string, adminModel?:string, timeoutMs?:number, overrides?:Record<string, boolean> }} DeckAgentSettings
- * @typedef {{ deckId:string, kind:string, status:'missing'|'building'|'fresh'|'stale'|'failed', builtAt?:string, error?:string }} PreviewBuild
- * @typedef {{ id:string, title:string, owner:string, status:string, scaffoldKey?:string, activeEditorUserId?:string, updatedAt?:string, previewUrl?:string, publishedUrl?:string, shares?:ShareLink[], messages?:ChatMessage[], snapshots?:{id:string,createdAt:string}[], agent?:DeckAgentSettings, previewBuild?:PreviewBuild, pptx?:{ id:string, format?:'pptx'|'pdf'|'markdown', status:string, downloadUrl?:string, error?:string, updatedAt?:string, verification?:{ slideCount:number, imageCount:number } } }} Deck
+ * @typedef {{ id:string, title:string, owner:string, status:string, scaffoldKey?:string, activeEditorUserId?:string, updatedAt?:string, previewUrl?:string, publishedUrl?:string, shares?:ShareLink[], messages?:ChatMessage[], snapshots?:{id:string,createdAt:string}[], agent?:DeckAgentSettings, pptx?:{ id:string, format?:'pptx'|'pdf'|'markdown', status:string, downloadUrl?:string, error?:string, updatedAt?:string, verification?:{ slideCount:number, imageCount:number } } }} Deck
  * @typedef {{ id:string, deckId:string, userId:string, role:'editor'|'viewer', createdAt:string, user?:User }} Collaborator
  * @typedef {{ key:string, name:string, description:string, isDefault:boolean, isActive?:boolean, minRole?:'admin'|'employee' }} Scaffold
  * @typedef {{ id:string, url:string, name:string, email:string, permission?:'view'|'edit', hasPassword?:boolean, expiresAt?:string, viewCount?:number, lastViewedAt?:string }} ShareLink
@@ -18,7 +17,6 @@ export const queryKeys = {
   session: ['session'],
   decks: ['decks'],
   deck: (id) => ['deck', id],
-  previewBuild: (id) => ['deck', id, 'preview-build'],
   collaborators: (id) => ['deck', id, 'collaborators'],
   scaffolds: ['scaffolds'],
   livePreview: (id) => ['deck', id, 'live-preview'],
@@ -63,7 +61,6 @@ export function normalizeDeck(raw) {
     shares: raw.shares ?? [],
     messages: raw.messages ?? [],
     agent: raw.agent ?? null,
-    previewBuild: raw.previewBuild ?? null,
     pptx: raw.pptx ?? null,
   };
 }
@@ -111,19 +108,6 @@ export async function getDeck(id) {
 
 export async function createDeck(input) {
   const payload = await api('/api/decks', { method: 'POST', body: JSON.stringify(input) });
-  return normalizeDeck(payload.deck ?? payload.data ?? payload);
-}
-
-export async function importPptxDeck({ file, title }) {
-  const contentBase64 = await fileToBase64(file);
-  const payload = await api('/api/imports/pptx', {
-    method: 'POST',
-    body: JSON.stringify({
-      filename: file.name,
-      title,
-      contentBase64,
-    }),
-  });
   return normalizeDeck(payload.deck ?? payload.data ?? payload);
 }
 
@@ -201,11 +185,6 @@ export async function startLivePreview(deckId) {
     body: JSON.stringify({}),
   });
   return payload.preview ?? payload;
-}
-
-export async function getPreviewBuild(deckId) {
-  const payload = await api(`/api/decks/${encodeURIComponent(deckId)}/preview-build`);
-  return payload.previewBuild ?? null;
 }
 
 export function createAdminComponent(deckId, input) {

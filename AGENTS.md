@@ -5,7 +5,7 @@
 - The product: employees chat with an LLM that generates and edits **static HTML slide decks**, previewed live in the web app, collaborative internally, and shareable with clients via tokenized links.
 - Decks are folders of plain files (per-slide HTML + `deck.json` + theme CSS) served statically in a fixed 1280x720 slide runtime — the promoted `themes/custom-html` format. No per-deck dev servers, no build step.
 - PPTX export is a flattened, pixel-perfect artifact (Playwright screenshots via pptxgenjs). **Editable PPTX is explicitly a non-goal** — do not propose or reintroduce DOM-to-shapes export paths.
-- Slidev is retired as the deck runtime. Do not propose Slidev-based preview/authoring solutions; remaining Slidev pieces (draft/published static builds, scaffolds) are transitional until the HTML runtime migration completes.
+- The HTML runtime is the only deck runtime. The standalone converter CLI is kept but unwired from the server; do not reintroduce it into preview, authoring, import, or export flows.
 - Collaboration in v1 = deck collaborators + edit locks + share links (optional password, visitor identity capture). Real-time CRDT co-editing is out of scope for v1.
 - Admins manage users, templates, model/provider settings, and deck-level project tools.
 
@@ -23,7 +23,6 @@
   - `db`
   - `decks`
   - `export`
-  - `preview`
 
 ## UI Rules
 
@@ -58,6 +57,6 @@
 
 ## Plan
 
-See `docs/product-direction.md` for the current-state architecture and the phased plan (runtime promotion, agent wiring, export retarget).
+See `docs/product-direction.md` for the current-state architecture and completed runtime migration plan.
 
-When editing deck content, follow `docs/deck-authoring.md`: edit `deck.json`, `slides/*.html`, `theme.css`, and `assets/` only — never the runtime shell files (`index.html`, `runtime.js`, `runtime.css`) or platform bookkeeping (`slides.md`, `package.json`, `meta.json`).
+When editing deck content, follow `docs/deck-authoring.md`: edit `deck.json`, `slides/*.html`, `theme.css`, and `assets/` only — never the runtime shell files (`index.html`, `runtime.js`, `runtime.css`) or platform bookkeeping (`package.json`, `meta.json`).

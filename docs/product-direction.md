@@ -38,15 +38,14 @@ pixel-perfect download — a feature, not the core product.
 - `apps/server` — Express/TS by domain: `agent` (deepagents, path-jailed
   filesystem, SSE streaming), `api`, `auth`, `core`, `db` (Postgres optional,
   JSON fallback), `decks` (CRUD, locks, collaborators, shares, settings),
-  `export` (queued jobs spawning the built converter CLI), `preview` (static
-  draft/published builds).
+  `export` (queued HTML-runtime screenshot jobs).
 - `apps/web` — React 19 + TanStack Query + Halfmoon; dashboard, deck detail,
   workbench (preview iframe + chat), templates, admin, `/client/:token` share
   surface.
 - `src/slidev-to-pptx` / `src/pptx-to-slidev` — the converter core.
   Screenshot mode only (Playwright → pptxgenjs full-bleed + EMU verifier).
-- `scripts/smoke-*.sh` — app, exporter, security, auth-bridge, auth-org,
-  basic; deepagents/postgres smokes are opt-in.
+- `scripts/smoke-*.sh` — app, HTML exporter, exporter reconciliation,
+  security, auth-bridge, and auth-org; deepagents/postgres smokes are opt-in.
 
 ## Phased plan
 
@@ -56,19 +55,20 @@ pixel-perfect download — a feature, not the core product.
 2. **Deck runtime promotion (done 2026-07-03, UI parity 2026-07-11).** The
    custom-html format is first-class: `deck.json` manifest, per-slide HTML
    files, branded scaffolds, and a written authoring convention
-   (`docs/deck-authoring.md`). The runtime shell now ships Slidev-parity
-   presentation UI reimplemented in vanilla JS (icon nav bar, thumbnail
+   (`docs/deck-authoring.md`). The runtime shell ships a full presentation UI
+   implemented in vanilla JS (icon nav bar, thumbnail
    overview, goto, click/build steps, slide transitions, presenter mode with
    notes/timer/sync, drawing + laser). The shell lives canonically in
    `runtime/` at the repo root and is always served from there — deck folders
    carry stamped copies purely for self-containment, so shell upgrades reach
    every existing deck immediately.
-3. **Wire the loop.** Agent prompts teach the runtime conventions; workbench
-   preview reloads on file writes (the `/api/decks/:id/runtime/events` SSE hub
-   already exists); exporter screenshots the runtime directly instead of
-   spawning Slidev (the `window.__deck` hook reveals all click steps and skips
-   transitions); share links serve the runtime for HTML decks (done
-   2026-07-11 — Slidev decks still fall back to the static draft build).
-4. **Ship v1.** Gate the dev-link auth fallback behind an env flag, refresh the
-   smoke suite for the new paths, migrate or archive remaining Slidev decks,
-   then remove the transitional Slidev build/preview code and dependencies.
+3. **Wire the loop (done 2026-07-11).** Agent prompts teach the runtime
+   conventions; workbench preview reloads on file writes through the
+   `/api/decks/:id/runtime/events` SSE hub; the exporter screenshots the runtime
+   directly (the `window.__deck` hook reveals all click steps and skips
+   transitions); share links serve the runtime.
+4. **Ship v1 runtime cleanup (done 2026-07-12).** Removed PPTX import, the
+   server's legacy converter export branch, static draft/published builds and
+   routes, markdown agent/store paths, legacy themes, and runtime dependencies.
+   The founding standalone converter CLI remains available but is unwired from
+   the server.

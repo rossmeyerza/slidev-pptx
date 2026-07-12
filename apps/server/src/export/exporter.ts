@@ -1,4 +1,3 @@
-import { spawn } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -86,7 +85,7 @@ export class ExportService {
     return reconciled;
   }
 
-  /** Starts a queued export, selecting the native HTML or legacy Slidev path. */
+  /** Starts a queued export for an HTML runtime deck. */
   async start(deckId: string, input: { format?: ExportFormat; mode?: string }): Promise<ExportJob> {
     await this.whenReady();
     const deck = await this.decks.get(deckId);
@@ -99,9 +98,7 @@ export class ExportService {
     if (htmlRuntime && format === 'markdown') {
       throw Object.assign(new Error('Markdown export is not available for HTML decks'), { statusCode: 400 });
     }
-    if (!htmlRuntime && format === 'pdf') {
-      throw Object.assign(new Error('PDF export is not available for legacy Slidev decks'), { statusCode: 400 });
-    }
+    if (!htmlRuntime) throw Object.assign(new Error('Deck workspace is missing deck.json'), { statusCode: 400 });
 
     const now = new Date().toISOString();
     const job: ExportJob = {
@@ -230,70 +227,7 @@ export class ExportService {
       return;
     }
 
-    const cliPath = path.join(this.config.repoRoot, 'dist', 'slidev-to-pptx', 'cli.js');
-    const verifyPath = path.join(this.config.repoRoot, 'dist', 'slidev-to-pptx', 'verify.js');
-    await fs.access(cliPath).catch(() => {
-      throw new Error('PPTX exporter is not built. Run `npm run build` at the repository root before requesting PPTX export.');
-    });
-
-    const outputPath = path.join(this.config.dataDir, 'exports', `${job.id}.pptx`);
-    const deckPath = this.decks.deckFile(job.deckId);
-    await runNode(this.config.repoRoot, [
-      cliPath,
-      deckPath,
-      outputPath,
-      '--mode',
-      mode,
-    ], this.config.export.timeoutMs);
-
-    const verification = await this.verifyPptx(verifyPath, outputPath, expectedSlideCount(markdown));
-
-    const completedAt = new Date().toISOString();
-    await this.writeJob({
-      ...job,
-      status: 'succeeded',
-      updatedAt: completedAt,
-      outputPath,
-      downloadUrl: `/api/exports/${job.id}/download`,
-      verification,
-    });
-    await this.decks.updateMeta(job.deckId, {
-      pptx: {
-        id: job.id,
-        format: job.format,
-        status: 'succeeded',
-        downloadUrl: `/api/exports/${job.id}/download`,
-        updatedAt: completedAt,
-        verification,
-      },
-    });
-    this.logger.info({
-      jobId: job.id,
-      deckId: job.deckId,
-      format: job.format,
-      mode,
-      outputPath,
-      verification,
-    }, 'export succeeded');
-  }
-
-  private async verifyPptx(verifyPath: string, outputPath: string, slideCount: number): Promise<NonNullable<ExportJob['verification']>> {
-    await fs.access(verifyPath).catch(() => {
-      throw new Error('PPTX verifier is not built. Run `npm run build` at the repository root before requesting PPTX export.');
-    });
-    const output = await runNode(this.config.repoRoot, [
-      verifyPath,
-      outputPath,
-      '--slides',
-      String(slideCount),
-      '--scale',
-      '2',
-    ], this.config.export.timeoutMs);
-    return {
-      ok: true,
-      slideCount: numericLine(output, 'Slides') ?? slideCount,
-      imageCount: numericLine(output, 'Images') ?? slideCount,
-    };
+    throw new Error('PPTX export requires an HTML runtime deck.');
   }
 
   private writeJob(job: ExportJob): Promise<void> {
@@ -325,55 +259,7 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, onTimeout?: () =
   });
 }
 
-function runNode(cwd: string, args: string[], timeoutMs: number): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, args, {
-      cwd,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    let stdout = '';
-    let stderr = '';
-    const timeout = setTimeout(() => {
-      child.kill('SIGTERM');
-      reject(new Error(`Export process timed out after ${timeoutMs}ms`));
-    }, timeoutMs);
-    child.stdout.on('data', (chunk) => {
-      stdout += chunk.toString();
-    });
-    child.stderr.on('data', (chunk) => {
-      stderr += chunk.toString();
-    });
-    child.on('error', (error) => {
-      clearTimeout(timeout);
-      reject(error);
-    });
-    child.on('close', (code) => {
-      clearTimeout(timeout);
-      if (code === 0) resolve(stdout);
-      else reject(new Error(stderr.trim() || `Exporter exited with code ${code}`));
-    });
-  });
-}
-
 function normalizeMode(value: string | undefined): string {
   if (!value || value === 'screenshot') return 'screenshot';
   throw Object.assign(new Error('Unsupported export mode'), { statusCode: 400 });
-}
-
-function expectedSlideCount(markdown: string): number {
-  const content = stripHeadmatter(markdown).trim();
-  if (!content) return 1;
-  return content.split(/^---\s*$/m).filter((part) => part.trim()).length || 1;
-}
-
-function stripHeadmatter(markdown: string): string {
-  if (!markdown.startsWith('---')) return markdown;
-  const end = markdown.indexOf('\n---', 3);
-  if (end < 0) return markdown;
-  return markdown.slice(end + 4);
-}
-
-function numericLine(output: string, label: string): number | undefined {
-  const match = output.match(new RegExp(`^${label}:\\s+(\\d+)`, 'm'));
-  return match ? Number(match[1]) : undefined;
 }

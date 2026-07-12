@@ -107,7 +107,7 @@ function defaultComponent(name: string): string {
 
 function defaultLayout(name: string): string {
   return `<template>
-  <div class="slidev-layout ${name}">
+  <div class="deck-layout ${name}">
     <slot />
   </div>
 </template>

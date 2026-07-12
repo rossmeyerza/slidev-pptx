@@ -23,9 +23,8 @@ The runtime shell files are stamped copies of the canonical shell in
 so per-deck copies exist only to keep deck folders self-contained. Never edit
 either copy as part of deck work.
 
-`slides.md`, `package.json`, and `meta.json` are platform bookkeeping; never
-edit them, and never reference them from slides (the runtime refuses to serve
-them).
+`package.json` and `meta.json` are platform bookkeeping; never edit them, and
+never reference them from slides (the runtime refuses to serve them).
 
 ## The canvas
 
@@ -50,7 +49,7 @@ them).
 ## Build steps (progressive reveal)
 
 - Add `data-click` to any element that should appear on a click/keypress,
-  Slidev-v-click style. Elements reveal one per press, in DOM order.
+  Elements reveal one per press, in DOM order.
 - `data-click="3"` pins an element to an explicit step; bare `data-click`
   auto-increments. Steps can be shared (two elements with `data-click="2"`
   appear together).
@@ -93,7 +92,7 @@ them).
 
 ## Runtime behavior (for reference, not for editing)
 
-The runtime shell reimplements Slidev's presentation UI in vanilla JS:
+The runtime shell provides presentation controls in vanilla JS:
 
 - **Navigation**: arrows/space advance through clicks then slides
   (Shift+arrow or Up/Down skips clicks); Home/End; clicking the right/left

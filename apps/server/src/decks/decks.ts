@@ -6,16 +6,7 @@ import { readRequiredJson, readRequiredText, readText, writeJson, writeText } fr
 import type { PgPool } from '../db/db.js';
 import { SettingsService } from './settings.js';
 
-const DEFAULT_MARKDOWN = `---
-theme: default
-title: Untitled deck
----
-
-# Untitled deck
-
-Start writing your Slidev deck here.
-`;
-const SNAPSHOT_ROOTS = ['deck.json', 'theme.css', 'slides.md', 'slides', 'assets', 'public'] as const;
+const SNAPSHOT_ROOTS = ['deck.json', 'theme.css', 'slides', 'assets', 'public'] as const;
 
 /**
  * Owns deck folders under `.data/decks/<id>`.
@@ -107,16 +98,12 @@ export class DeckStore {
   /**
    * Creates a deck folder by copying the v1 scaffold.
    */
-  async create(input: { title?: string; markdown?: string; scaffold?: string; ownerUserId?: string }): Promise<DeckRecord> {
+  async create(input: { title?: string; scaffold?: string; ownerUserId?: string }): Promise<DeckRecord> {
     const now = new Date().toISOString();
     const id = randomUUID();
     const scaffoldKey = normalizeScaffoldKey(input.scaffold) ?? this.config.scaffoldKey;
     await this.assertScaffoldExists(scaffoldKey);
-    const isHtmlRuntime = await this.isHtmlScaffold(scaffoldKey);
-    const title = normalizeTitle(input.title) ?? inferTitle(input.markdown) ?? 'Untitled deck';
-    const markdown = input.markdown ?? setSlidevTitle((await this.scaffoldMarkdown(scaffoldKey))
-      .replaceAll(['Slidev', 'Agent', 'Platform'].join(' '), title)
-      .replaceAll('Deckhand', title), title);
+    const title = normalizeTitle(input.title) ?? 'Untitled deck';
     const orgId = await this.configuredOrgId();
     const meta: DeckMeta = {
       id,
@@ -128,90 +115,43 @@ export class DeckStore {
       createdAt: now,
       updatedAt: now,
       visibility: 'private',
-      draftUrl: isHtmlRuntime ? `/runtime/${id}/#/1` : `/draft/${id}/#/1`,
+      draftUrl: `/runtime/${id}/#/1`,
     };
 
     await fs.cp(this.scaffoldDir(scaffoldKey), this.deckDir(id), { recursive: true, force: false });
     await this.linkRuntimeDependencies(id);
-    if (isHtmlRuntime) {
-      await this.stampRuntimeShell(id);
-      await this.applyDeckManifestTitle(id, title);
-    }
-    await writeText(this.deckFile(id), markdown);
+    await this.stampRuntimeShell(id);
+    await this.applyDeckManifestTitle(id, title);
     if (this.pool) await this.insertMeta(meta, input.ownerUserId ?? 'system');
     else await writeJson(this.metaFile(id), meta);
-    return { meta, markdown };
+    return { meta, markdown: '' };
   }
 
   /**
-   * Registers an existing Slidev project directory as a new rough imported deck.
-   */
-  async createFromProject(input: { title?: string; projectDir: string; ownerUserId?: string; scaffoldKey?: string }): Promise<DeckRecord> {
-    const now = new Date().toISOString();
-    const id = randomUUID();
-    const targetDir = this.deckDir(id);
-    await fs.cp(input.projectDir, targetDir, { recursive: true, force: false });
-    await this.linkRuntimeDependencies(id);
-
-    const markdownPath = this.deckFile(id);
-    const markdown = await readRequiredText(markdownPath, 'Imported deck');
-    const title = normalizeTitle(input.title) ?? inferTitle(markdown) ?? inferSlidevTitle(markdown) ?? 'Imported PPTX deck';
-    const updatedMarkdown = setSlidevTitle(markdown, title);
-    const orgId = await this.configuredOrgId();
-    const meta: DeckMeta = {
-      id,
-      orgId,
-      title,
-      scaffoldKey: input.scaffoldKey ?? 'pptx-import',
-      ownerUserId: input.ownerUserId,
-      status: 'draft',
-      createdAt: now,
-      updatedAt: now,
-      visibility: 'private',
-      draftUrl: `/draft/${id}/#/1`,
-      messages: [{
-        role: 'agent',
-        content: 'Imported from PPTX. This is a rough conversion; use the agent to refine layout and copy.',
-        createdAt: now,
-      }],
-    };
-
-    await writeText(markdownPath, updatedMarkdown);
-    if (this.pool) await this.insertMeta(meta, input.ownerUserId ?? 'system');
-    else await writeJson(this.metaFile(id), meta);
-    return { meta, markdown: updatedMarkdown };
-  }
-
-  /**
-   * Returns a deck with metadata and markdown.
+   * Returns a deck with metadata.
    */
   async get(id: string): Promise<DeckRecord> {
     this.assertDeckId(id);
-    const [meta, markdown] = await Promise.all([this.readMeta(id), readRequiredText(this.deckFile(id), 'Deck')]);
-    return { meta, markdown };
+    return { meta: await this.readMeta(id), markdown: '' };
   }
 
   /**
-   * Updates deck title and/or markdown while preserving folder identity.
+   * Updates a deck title while preserving folder identity.
    */
-  async update(id: string, input: { title?: string; markdown?: string }): Promise<DeckRecord> {
+  async update(id: string, input: { title?: string }): Promise<DeckRecord> {
     const current = await this.get(id);
     const title = normalizeTitle(input.title) ?? current.meta.title;
-    const markdown = input.markdown ?? current.markdown;
     const meta: DeckMeta = {
       ...current.meta,
       title,
       updatedAt: new Date().toISOString(),
     };
 
-    await Promise.all([
-      writeText(this.deckFile(id), markdown),
-      this.writeMeta(meta),
-    ]);
+    await this.writeMeta(meta);
     if (title !== current.meta.title && await this.isHtmlDeck(id)) {
       await this.applyDeckManifestTitle(id, title, false);
     }
-    return { meta, markdown };
+    return { meta, markdown: '' };
   }
 
   async duplicate(id: string, ownerUserId: string): Promise<DeckRecord> {
@@ -223,7 +163,6 @@ export class DeckStore {
       force: false,
       filter: (entry) => !['.snapshots', 'node_modules', 'dist', '.git'].includes(path.basename(entry)),
     });
-    const html = await this.isHtmlDeck(newId);
     const meta: DeckMeta = {
       id: newId,
       orgId: await this.configuredOrgId(),
@@ -234,13 +173,13 @@ export class DeckStore {
       createdAt: now,
       updatedAt: now,
       visibility: 'private',
-      draftUrl: html ? `/runtime/${newId}/#/1` : `/draft/${newId}/#/1`,
+      draftUrl: `/runtime/${newId}/#/1`,
     };
     await this.linkRuntimeDependencies(newId);
-    if (html) await this.applyDeckManifestTitle(newId, meta.title, false);
+    await this.applyDeckManifestTitle(newId, meta.title, false);
     if (this.pool) await this.insertMeta(meta, ownerUserId);
     else await writeJson(this.metaFile(newId), meta);
-    return { meta, markdown: await readRequiredText(this.deckFile(newId), 'Deck') };
+    return { meta, markdown: '' };
   }
 
   async saveAsTemplate(id: string, input: { name: string; description?: string }): Promise<ScaffoldRecord> {
@@ -262,7 +201,6 @@ export class DeckStore {
     manifest.title = 'Untitled deck';
     await writeText(path.join(target, 'deck.json'), `${JSON.stringify(manifest, null, 2)}\n`);
     await writeJson(path.join(target, 'package.json'), { name: input.name.trim(), description: input.description?.trim() ?? '', private: true, version: '1.0.0' });
-    await fs.copyFile(path.join(this.config.repoRoot, 'themes', 'custom-html', 'slides.md'), path.join(target, 'slides.md'));
     return (await this.listScaffolds({ includeInactive: true, userRole: 'admin' })).find((item) => item.key === key)!;
   }
 
@@ -428,9 +366,7 @@ export class DeckStore {
     }
   }
 
-  /**
-   * Patches metadata without changing deck markdown.
-   */
+  /** Patches deck metadata. */
   async updateMeta(id: string, patch: Partial<DeckMeta>): Promise<DeckMeta> {
     const current = await this.readMeta(id);
     const meta = {
@@ -444,14 +380,6 @@ export class DeckStore {
   }
 
   /**
-   * Returns the canonical markdown file path for a deck.
-   */
-  deckFile(id: string): string {
-    this.assertDeckId(id);
-    return path.join(this.deckDir(id), 'slides.md');
-  }
-
-  /**
    * Returns the deck folder path for local services.
    */
   deckPath(id: string): string {
@@ -460,7 +388,6 @@ export class DeckStore {
   }
 
   private async editableFilePaths(id: string): Promise<string[]> {
-    if (!await this.isHtmlDeck(id)) return ['slides.md'];
     const manifest = JSON.parse(await readRequiredText(path.join(this.deckDir(id), 'deck.json'), 'Deck manifest')) as { slides?: unknown };
     const slides = Array.isArray(manifest.slides) ? manifest.slides.filter((value): value is string => typeof value === 'string' && /^slides\/[^/]+\.html$/.test(value)) : [];
     return ['deck.json', 'theme.css', ...slides];
@@ -594,13 +521,9 @@ export class DeckStore {
   }
 
   private scaffoldDir(scaffoldKey = this.config.scaffoldKey): string {
-    const key = normalizeScaffoldKey(scaffoldKey) ?? 'commercial-profile';
+    const key = normalizeScaffoldKey(scaffoldKey) ?? 'custom-html';
     const theme = path.join(this.config.repoRoot, 'themes', key);
     return existsSync(theme) ? theme : path.join(this.config.dataDir, 'templates', key);
-  }
-
-  private async scaffoldMarkdown(scaffoldKey: string): Promise<string> {
-    return readText(path.join(this.scaffoldDir(scaffoldKey), 'slides.md'), DEFAULT_MARKDOWN);
   }
 
   private async assertScaffoldExists(scaffoldKey: string): Promise<void> {
@@ -611,15 +534,6 @@ export class DeckStore {
       if (!isNodeErrorCode(error, 'ENOENT')) throw error;
     }
     throw Object.assign(new Error(`Scaffold not found: ${scaffoldKey}`), { statusCode: 404 });
-  }
-
-  private async isHtmlScaffold(scaffoldKey: string): Promise<boolean> {
-    try {
-      await fs.access(path.join(this.scaffoldDir(scaffoldKey), 'deck.json'));
-      return true;
-    } catch {
-      return false;
-    }
   }
 
   /**
@@ -721,20 +635,6 @@ function normalizeTitle(value: unknown): string | undefined {
   return title.length > 0 ? title.slice(0, 160) : undefined;
 }
 
-function inferTitle(markdown: unknown): string | undefined {
-  if (typeof markdown !== 'string') return undefined;
-  const heading = markdown.match(/^#\s+(.+)$/m);
-  return normalizeTitle(heading?.[1]);
-}
-
-function inferSlidevTitle(markdown: string): string | undefined {
-  if (!markdown.startsWith('---')) return undefined;
-  const end = markdown.indexOf('\n---', 3);
-  if (end < 0) return undefined;
-  const match = markdown.slice(0, end).match(/^title:\s*["']?(.+?)["']?\s*$/m);
-  return normalizeTitle(match?.[1]);
-}
-
 function normalizeScaffoldKey(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined;
   const key = value.trim();
@@ -743,18 +643,6 @@ function normalizeScaffoldKey(value: unknown): string | undefined {
     throw Object.assign(new Error('Invalid scaffold key'), { statusCode: 400 });
   }
   return key;
-}
-
-function setSlidevTitle(markdown: string, title: string): string {
-  if (!markdown.startsWith('---')) return markdown;
-  const end = markdown.indexOf('\n---', 3);
-  if (end < 0) return markdown;
-  const frontmatter = markdown.slice(0, end);
-  const quotedTitle = JSON.stringify(title);
-  if (/^title:\s*.*$/m.test(frontmatter)) {
-    return `${frontmatter.replace(/^title:\s*.*$/m, `title: ${quotedTitle}`)}${markdown.slice(end)}`;
-  }
-  return `${frontmatter}\ntitle: ${quotedTitle}${markdown.slice(end)}`;
 }
 
 function rowToMeta(row: Record<string, unknown>): DeckMeta {
@@ -769,7 +657,7 @@ function rowToMeta(row: Record<string, unknown>): DeckMeta {
     createdAt: iso(row.created_at),
     updatedAt: iso(row.updated_at),
     visibility: normalizeVisibility(row.visibility),
-    draftUrl: String(row.draft_url ?? `/draft/${row.id}/#/1`),
+    draftUrl: String(row.draft_url ?? `/runtime/${row.id}/#/1`),
     shareToken: typeof row.share_token === 'string' ? row.share_token : undefined,
     activeEditorUserId: typeof row.active_editor_user_id === 'string' ? row.active_editor_user_id : undefined,
     publishedAt: row.published_at ? iso(row.published_at) : undefined,

@@ -55,7 +55,7 @@ export class AuthService {
     if (this.config.auth.bypass) return this.bypassContext();
 
     const cookieHeader = req.headers.cookie ?? '';
-    const token = readCookie(cookieHeader, 'slidev_session');
+    const token = readCookie(cookieHeader, 'deckhand_session');
 
     if (token) {
       if (this.pool) {
@@ -197,7 +197,7 @@ export class AuthService {
 
   async logout(req: JsonRequest): Promise<void> {
     const cookieHeader = req.headers.cookie ?? '';
-    const token = readCookie(cookieHeader, 'slidev_session');
+    const token = readCookie(cookieHeader, 'deckhand_session');
     const betterAuthToken = this.pool ? await this.readBetterAuthSessionToken(cookieHeader) : undefined;
     if (this.pool) {
       await this.pool.query(
@@ -244,7 +244,7 @@ export class AuthService {
 
   async sessionCookie(sessionToken: string, session: SessionRecord): Promise<string[]> {
     const maxAge = Math.max(0, Math.floor((Date.parse(session.expiresAt) - Date.now()) / 1000));
-    const cookies = [`slidev_session=${encodeURIComponent(sessionToken)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAge}`];
+    const cookies = [`deckhand_session=${encodeURIComponent(sessionToken)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAge}`];
     if (this.pool) {
       cookies.push(`better-auth.session_token=${encodeURIComponent(await signBetterAuthCookieValue(sessionToken, this.config.auth.betterAuthSecret))}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAge}`);
     }
@@ -253,7 +253,7 @@ export class AuthService {
 
   clearCookie(): string[] {
     return [
-      'slidev_session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0',
+      'deckhand_session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0',
       'better-auth.session_token=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0',
       '__Secure-better-auth.session_token=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0',
     ];

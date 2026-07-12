@@ -2,8 +2,7 @@ import type { AppConfig, DeckRecord, UserRecord } from '../core/types.js';
 import { runDeepAgentDeckEdit } from './deepAgentRuntime.js';
 
 export interface AgentEditResult {
-  mode: 'markdown' | 'workspace';
-  markdown?: string;
+  mode: 'workspace';
   changedFiles?: string[];
   summary: string;
   model: string;
@@ -30,14 +29,7 @@ export async function runDeckEditAgent(
 ): Promise<AgentEditResult> {
   assertAgentInstructionAllowed(user, instruction);
   if (!options.deckRoot) throw Object.assign(new Error('Deepagents runtime requires deckRoot'), { statusCode: 500 });
-  const result = await runDeepAgentDeckEdit(config, user, deck, options.deckRoot, instruction, { signal: options.signal, onEvent: options.onEvent, history: options.history });
-  if (result.mode === 'markdown') validateMarkdown(requiredMarkdown(result));
-  return result;
-}
-
-function requiredMarkdown(result: AgentEditResult): string {
-  if (!result.markdown) throw Object.assign(new Error('Agent did not return markdown'), { statusCode: 502 });
-  return result.markdown;
+  return runDeepAgentDeckEdit(config, user, deck, options.deckRoot, instruction, { signal: options.signal, onEvent: options.onEvent, history: options.history });
 }
 
 export function agentApiKey(config: AppConfig): string {
@@ -75,13 +67,4 @@ export function agentRunConfig(config: AppConfig, user: UserRecord, deck?: DeckR
     baseUrl: deckAgent?.baseUrl ?? config.agent.baseUrl,
     timeoutMs: deckAgent?.timeoutMs ?? config.agent.timeoutMs,
   };
-}
-
-function validateMarkdown(markdown: string): void {
-  if (!markdown.includes('---') || !markdown.includes('#')) {
-    throw Object.assign(new Error('Agent response did not look like a Slidev markdown deck'), { statusCode: 502 });
-  }
-  if (markdown.length > 1_000_000) {
-    throw Object.assign(new Error('Agent response is too large'), { statusCode: 502 });
-  }
 }

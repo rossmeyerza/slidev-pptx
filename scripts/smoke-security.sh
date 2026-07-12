@@ -50,27 +50,15 @@ assertAgentInstructionAllowed(admin, 'Edit theme/layouts/default.vue and update 
 
 const memberPerms = permissionsForRole('member');
 const adminPerms = permissionsForRole('admin');
-const workspaceMemberPerms = permissionsForRole('member', 'workspace');
-const workspaceAdminPerms = permissionsForRole('admin', 'workspace');
 const memberText = JSON.stringify(memberPerms);
 const adminText = JSON.stringify(adminPerms);
-const workspaceMemberText = JSON.stringify(workspaceMemberPerms);
-const workspaceAdminText = JSON.stringify(workspaceAdminPerms);
-for (const required of ['/theme/**', '/package.json', '/setup/**', '/**/*.vue']) {
-  if (!memberText.includes(required)) throw new Error(`member permissions missing ${required}`);
-}
-if (!memberText.includes('"mode":"deny"')) throw new Error('member permissions do not include deny rules');
-if (!memberText.includes('/slides.md')) throw new Error('member permissions do not allow slides.md writes');
 for (const allowed of ['/deck.json', '/theme.css', '/slides/**', '/assets/**', '/public/**']) {
-  if (!workspaceMemberText.includes(allowed)) throw new Error(`workspace member permissions missing ${allowed}`);
+  if (!memberText.includes(allowed)) throw new Error(`workspace permissions missing ${allowed}`);
 }
 for (const denied of ['/index.html', '/runtime.js', '/runtime.css', '/slides.md', '/package.json', '/meta.json', '/node_modules/**', '/dist/**']) {
-  if (!workspaceMemberText.includes(denied)) throw new Error(`workspace member deny permissions missing ${denied}`);
+  if (!memberText.includes(denied)) throw new Error(`workspace deny permissions missing ${denied}`);
 }
-if (workspaceAdminText !== workspaceMemberText) throw new Error('workspace admin and member permissions should be identical');
-if (!adminText.includes('/**') || !adminText.includes('"mode":"allow"')) {
-  throw new Error('admin permissions should allow deck-root writes');
-}
+if (adminText !== memberText) throw new Error('workspace admin and member permissions should be identical');
 
 async function* one(value) {
   yield value;
@@ -82,11 +70,11 @@ await Promise.all(observeDeepAgentRunEvents({
   toolCalls: one({
     name: 'write_file',
     id: 'tool-1',
-    input: Promise.resolve({ path: '/slides.md' }),
+    input: Promise.resolve({ path: '/slides/01-cover.html' }),
     output: Promise.resolve({ ok: true }),
     status: Promise.resolve('done'),
   }),
-  values: one({ files: { '/slides.md': 'updated' } }),
+  values: one({ files: { '/slides/01-cover.html': 'updated' } }),
 }, (event, data) => events.push({ event, data })));
 
 for (const eventName of ['token', 'tool_call', 'tool_result', 'file_activity']) {
