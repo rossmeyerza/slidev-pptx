@@ -28,6 +28,7 @@
     "smoke:auth-org": "bash scripts/smoke-auth-org.sh",
     "smoke:exporter": "bash scripts/smoke-exporter.sh",
     "smoke:export-html": "bash scripts/smoke-export-html.sh",
+    "smoke:export-native": "bash scripts/smoke-export-native.sh",
     "smoke:thumbnails": "bash scripts/smoke-thumbnails.sh",
     "smoke:postgres-auth": "bash scripts/smoke-postgres-auth.sh",
     "smoke:deepagents": "bash scripts/smoke-deepagents-runtime.sh"

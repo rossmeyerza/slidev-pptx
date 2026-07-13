@@ -733,7 +733,8 @@ export function createApiRouter(
     const job = await exports.get(req.params.id);
     await requireDeckAccess(decks, collaborators, job.deckId, context.user, 'view');
     assertDownloadable(job);
-    await sendFile(res, job.outputPath, `deck-${job.id}.${job.format === 'markdown' ? 'md' : job.format}`);
+    const extension = job.format === 'markdown' ? 'md' : job.format === 'pptx-native' ? 'pptx' : job.format;
+    await sendFile(res, job.outputPath, `deck-${job.id}.${extension}`);
   });
 
   router.add('GET', '/api/decks/:id/runtime/events', async (req, res) => {
@@ -1522,7 +1523,7 @@ function optionalUserStatus(value: unknown): UserRecord['status'] | undefined {
 
 function optionalExportFormat(value: unknown): ExportFormat | undefined {
   if (value === undefined) return undefined;
-  if (value === 'pptx' || value === 'pdf' || value === 'markdown') return value;
+  if (value === 'pptx' || value === 'pdf' || value === 'markdown' || value === 'pptx-native') return value;
   throw Object.assign(new Error('Unsupported export format'), { statusCode: 400 });
 }
 

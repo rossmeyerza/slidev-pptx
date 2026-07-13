@@ -96,7 +96,7 @@ export interface DeckCollaboratorRecord {
   createdAt: string;
 }
 
-export type ExportFormat = 'pptx' | 'pdf' | 'markdown';
+export type ExportFormat = 'pptx' | 'pdf' | 'markdown' | 'pptx-native';
 export type ExportStatus = 'queued' | 'running' | 'succeeded' | 'failed';
 
 export interface ExportJob {
@@ -110,10 +110,13 @@ export interface ExportJob {
   verification?: {
     ok: boolean;
     slideCount: number;
-    imageCount: number;
+    imageCount?: number;
     expectedImageWidth?: number;
     expectedImageHeight?: number;
     errors?: string[];
+    textRuns?: number;
+    images?: number;
+    rects?: number;
   };
   outputPath?: string;
   downloadUrl?: string;

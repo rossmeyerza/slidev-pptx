@@ -6,6 +6,7 @@ import { DeckStore } from '../decks/decks.js';
 import { isNodeError, readRequiredJson, writeJson } from '../core/storage.js';
 import { silentLogger, type ServiceLogger } from '../core/logger.js';
 import { exportHtmlDeck } from './htmlDeckExporter.js';
+import { exportNativePptx } from './htmlDeckNativeExporter.js';
 
 interface QueuedExport {
   job: ExportJob;
@@ -90,7 +91,7 @@ export class ExportService {
     await this.whenReady();
     const deck = await this.decks.get(deckId);
     const format = input.format ?? 'pptx';
-    if (format !== 'pptx' && format !== 'pdf' && format !== 'markdown') {
+    if (format !== 'pptx' && format !== 'pdf' && format !== 'markdown' && format !== 'pptx-native') {
       throw Object.assign(new Error('Unsupported export format'), { statusCode: 400 });
     }
     const deckDir = this.decks.deckPath(deckId);
@@ -194,6 +195,38 @@ export class ExportService {
     }
 
     if (htmlRuntime) {
+      if (job.format === 'pptx-native') {
+        const outputPath = path.join(this.config.dataDir, 'exports', `${job.id}.pptx`);
+        const controller = new AbortController();
+        const result = await withTimeout(exportNativePptx({
+          deckDir,
+          shellDir: path.join(this.config.repoRoot, 'runtime'),
+          outputPath,
+          signal: controller.signal,
+        }), this.config.export.timeoutMs, () => controller.abort());
+        const completedAt = new Date().toISOString();
+        await this.writeJob({
+          ...job,
+          status: 'succeeded',
+          updatedAt: completedAt,
+          outputPath,
+          downloadUrl: `/api/exports/${job.id}/download`,
+          verification: result.verification,
+        });
+        await this.decks.updateMeta(job.deckId, {
+          pptx: {
+            id: job.id,
+            format: 'pptx-native',
+            status: 'succeeded',
+            downloadUrl: `/api/exports/${job.id}/download`,
+            updatedAt: completedAt,
+            verification: result.verification,
+          },
+        });
+        this.logger.info({ jobId: job.id, deckId: job.deckId, format: job.format, outputPath, verification: result.verification }, 'export succeeded');
+        return;
+      }
+
       const extension = job.format === 'pdf' ? 'pdf' : 'pptx';
       const outputPath = path.join(this.config.dataDir, 'exports', `${job.id}.${extension}`);
       const controller = new AbortController();

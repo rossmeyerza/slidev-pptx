@@ -1018,7 +1018,7 @@ function DeckDetail({ deck, currentUser, loading, exportJob, onWork, onRename, o
   const exportStatus = currentExport?.status ?? 'not_exported';
   const exportInProgress = exporting || ['queued', 'running'].includes(String(exportStatus).toLowerCase());
   const currentExportFormat = currentExport?.format ?? 'pptx';
-  const currentExportLabel = currentExportFormat === 'pdf' ? 'PDF' : currentExportFormat === 'markdown' ? 'Markdown' : 'PPTX';
+  const currentExportLabel = currentExportFormat === 'pdf' ? 'PDF' : currentExportFormat === 'markdown' ? 'Markdown' : currentExportFormat === 'pptx-native' ? 'PPTX (editable)' : 'PPTX';
 
   return (
     <section>
@@ -1067,6 +1067,21 @@ function DeckDetail({ deck, currentUser, loading, exportJob, onWork, onRename, o
             }}
           >
             {exportInProgress ? 'Exporting...' : 'Export PPTX'}
+          </button>
+          <button
+            className="btn btn-outline-secondary"
+            type="button"
+            disabled={exportInProgress}
+            onClick={async () => {
+              setExporting(true);
+              try {
+                await onExport?.('pptx-native');
+              } finally {
+                setExporting(false);
+              }
+            }}
+          >
+            {exportInProgress ? 'Exporting...' : 'Export PPTX (editable)'}
           </button>
           <button
             className="btn btn-outline-secondary"
@@ -1227,7 +1242,9 @@ function DeckDetail({ deck, currentUser, loading, exportJob, onWork, onRename, o
               {currentExport?.error ? <section className="alert alert-danger py-2 mb-3" role="alert">{currentExport.error}</section> : null}
               {currentExport?.downloadUrl ? <a className="btn btn-outline-primary btn-sm" href={currentExport.downloadUrl} target="_blank" rel="noreferrer">Download {currentExportLabel}</a> : <span className="text-body-secondary">Use an export action to start a new export.</span>}
               {currentExport?.verification ? (
-                <p className="text-body-secondary small mb-0 mt-2">Verified {currentExport.verification.slideCount} slides and {currentExport.verification.imageCount} images.</p>
+                currentExportFormat === 'pptx-native'
+                  ? <p className="text-body-secondary small mb-0 mt-2">Verified {currentExport.verification.slideCount} slides, {currentExport.verification.textRuns} editable text runs, {currentExport.verification.images} images, and {currentExport.verification.rects} rectangles.</p>
+                  : <p className="text-body-secondary small mb-0 mt-2">Verified {currentExport.verification.slideCount} slides and {currentExport.verification.imageCount} images.</p>
               ) : null}
             </div>
           </section>
