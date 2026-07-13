@@ -7,6 +7,7 @@ import path from 'node:path';
 import { Router, sendFile, sendHtml, sendInlineFile, sendJson, type JsonRequest } from '../core/http.js';
 import { ShareService } from '../decks/share.js';
 import { AuthService } from '../auth/auth.js';
+import { Mailer, type MailMessage } from '../auth/mailer.js';
 import { agentApiKey, agentRunConfig, runDeckEditAgent } from '../agent/agent.js';
 import type { PgPool } from '../db/db.js';
 import { CollaboratorService } from '../decks/collaborators.js';
@@ -34,6 +35,7 @@ export function createApiRouter(
   const agentRuns = new AgentRunService(config, pool);
   const exports = new ExportService(config, decks, logger);
   const auth = new AuthService(config, pool);
+  const mailer = new Mailer(config);
   const settings = new SettingsService(config);
   const adminTools = new AdminToolService(decks);
   const runtimeEvents = new RuntimeEventHub();
@@ -600,15 +602,32 @@ export function createApiRouter(
       email: optionalString(body.email),
     });
     res.setHeader('set-cookie', shareVisitorCookie(req.params.token, visitor.id));
+    void (async () => {
+      try {
+        const all = await shares.visitorsForShare(req.params.token);
+        const priorForEmail = all.filter((candidate) => candidate.email === visitor.email).length;
+        if (priorForEmail <= 1) {
+          const deck = await shares.getSharedDeck(req.params.token);
+          void notifyDeckOwner(auth, mailer, logger, deck.meta.ownerUserId, viewEmail(visitor, deck.meta.title))
+            .catch((error) => logger.warn({ error: String(error) }, 'notification error'));
+        }
+      } catch (error) {
+        logger.warn({ error: String(error) }, 'notification error');
+      }
+    })();
     sendJson(res, 200, { visitor });
   });
 
   router.add('POST', '/api/share/:token/instructions', async (req, res) => {
     const { share, visitor } = await requireShareEditVisitor(shares, req);
     const deck = await shares.getSharedDeck(req.params.token);
-    const body = withShareVisitorInstruction(asObject(req.body), visitor);
+    const requestBody = asObject(req.body);
+    const instructionText = (optionalString(requestBody.instruction) ?? optionalString(requestBody.message) ?? '').trim().slice(0, 500);
+    const body = withShareVisitorInstruction(requestBody, visitor);
     const updated = await recordInstruction(config, decks, chat, agentRuns, deck.meta.id, body, shareVisitorUser(visitor));
     runtimeEvents.emit(updated.meta.id);
+    void notifyDeckOwner(auth, mailer, logger, updated.meta.ownerUserId, editEmail(visitor, updated.meta.title, instructionText))
+      .catch((error) => logger.warn({ error: String(error) }, 'notification error'));
     sendJson(res, 200, {
       ...(await formatDeck(updated, [], chat, decks)),
       previewUrl: `/share/${encodeURIComponent(req.params.token)}/deck/#/1`,
@@ -1432,6 +1451,43 @@ async function formatCollaborators(auth: AuthService, records: DeckCollaboratorR
 
 function optionalString(value: unknown): string | undefined {
   return typeof value === 'string' ? value : undefined;
+}
+
+function viewEmail(visitor: { name: string; email: string }, deckTitle: string): MailMessage {
+  return {
+    to: '',
+    subject: `${visitor.name} opened your deck "${deckTitle}"`,
+    text: `${visitor.name} (${visitor.email}) opened the shared deck "${deckTitle}" for the first time.\n\n— Deckhand`,
+  };
+}
+
+function editEmail(visitor: { name: string; email: string }, deckTitle: string, instruction: string): MailMessage {
+  return {
+    to: '',
+    subject: `${visitor.name} edited your deck "${deckTitle}"`,
+    text: `${visitor.name} (${visitor.email}) made an edit via your share link to "${deckTitle}".\n\n"${instruction}"\n\n— Deckhand`,
+  };
+}
+
+async function notifyDeckOwner(
+  auth: AuthService,
+  mailer: Mailer,
+  logger: ServiceLogger,
+  ownerUserId: string | undefined,
+  message: MailMessage,
+): Promise<void> {
+  try {
+    if (!ownerUserId) return;
+    const owner = await auth.getUserById(ownerUserId);
+    if (!owner?.email) return;
+    message.to = owner.email;
+    const result = await mailer.send(message);
+    if (result.deliveryError) {
+      logger.warn({ deliveryError: result.deliveryError, to: owner.email }, 'owner notification failed');
+    }
+  } catch (error) {
+    logger.warn({ error: String(error) }, 'notification error');
+  }
 }
 
 function requestIp(req: JsonRequest): string {

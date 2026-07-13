@@ -96,6 +96,7 @@ export function App() {
   const [view, setView] = useState('dashboard');
   const [selectedDeckId, setSelectedDeckId] = useState('');
   const [exportJobs, setExportJobs] = useState({});
+  const completedExportJobsRef = useRef(new Set());
   const [theme, setTheme] = useState(() => {
     try { return localStorage.getItem('deckhand-theme') ?? 'light'; } catch { return 'light'; }
   });
@@ -295,7 +296,15 @@ export function App() {
               const job = result.export ?? result;
               if (jobId) {
                 setExportJobs((current) => ({ ...current, [selectedDeck.id]: job }));
-                void pollExport(queryClient, selectedDeck.id, jobId, setExportJobs);
+                void pollExport(queryClient, selectedDeck.id, jobId, setExportJobs, (completedJob) => {
+                  if (completedExportJobsRef.current.has(jobId)) return;
+                  completedExportJobsRef.current.add(jobId);
+                  if (String(completedJob.status).toLowerCase() === 'succeeded') {
+                    showToast('Export ready to download', 'success', 'Export finished');
+                  } else {
+                    showToast(completedJob.error || 'Export failed', 'danger', 'Export failed');
+                  }
+                });
               }
               await queryClient.invalidateQueries({ queryKey: queryKeys.deck(selectedDeck.id) });
             }}
@@ -2016,14 +2025,17 @@ function AdminTemplates({ scaffolds, settings, loading, onSave }) {
   );
 }
 
-async function pollExport(queryClient, deckId, jobId, setExportJobs) {
+async function pollExport(queryClient, deckId, jobId, setExportJobs, onTerminal) {
   for (let attempt = 0; attempt < 120; attempt += 1) {
     await new Promise((resolve) => setTimeout(resolve, 1500));
     const job = await getExport(jobId).catch(() => null);
     if (!job) return;
     setExportJobs?.((current) => ({ ...current, [deckId]: job }));
     await queryClient.invalidateQueries({ queryKey: queryKeys.deck(deckId) });
-    if (['succeeded', 'failed'].includes(String(job.status).toLowerCase())) return;
+    if (['succeeded', 'failed'].includes(String(job.status).toLowerCase())) {
+      onTerminal?.(job);
+      return;
+    }
   }
 }
 

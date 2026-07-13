@@ -215,6 +215,10 @@ export class AuthService {
     return this.readUsers();
   }
 
+  async getUserById(id: string): Promise<UserRecord | null> {
+    return (await this.readUsers()).find((user) => user.id === id) ?? null;
+  }
+
   async updateUser(
     userId: string,
     input: { name?: string; role?: UserRole; status?: UserRecord['status'] },

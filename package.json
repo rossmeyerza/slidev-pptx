@@ -22,6 +22,7 @@
     "pptx-to-slidev": "node dist/pptx-to-slidev/cli.js",
     "verify": "node dist/slidev-to-pptx/verify.js",
     "smoke:security": "bash scripts/smoke-security.sh",
+    "smoke:notifications": "bash scripts/smoke-notifications.sh",
     "smoke:auth-bridge": "bash scripts/smoke-auth-bridge.sh",
     "smoke:auth-org": "bash scripts/smoke-auth-org.sh",
     "smoke:exporter": "bash scripts/smoke-exporter.sh",
