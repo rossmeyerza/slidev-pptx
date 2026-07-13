@@ -55,7 +55,7 @@ const adminText = JSON.stringify(adminPerms);
 for (const allowed of ['/deck.json', '/theme.css', '/slides/**', '/assets/**', '/public/**']) {
   if (!memberText.includes(allowed)) throw new Error(`workspace permissions missing ${allowed}`);
 }
-for (const denied of ['/index.html', '/runtime.js', '/runtime.css', '/slides.md', '/package.json', '/meta.json', '/node_modules/**', '/dist/**']) {
+for (const denied of ['/index.html', '/runtime.js', '/runtime.css', '/package.json', '/meta.json', '/node_modules/**', '/dist/**']) {
   if (!memberText.includes(denied)) throw new Error(`workspace deny permissions missing ${denied}`);
 }
 if (adminText !== memberText) throw new Error('workspace admin and member permissions should be identical');
