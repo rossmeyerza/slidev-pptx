@@ -38,10 +38,18 @@ async function main(): Promise<void> {
 
   const logLevel = process.env.LOG_LEVEL ?? 'info';
   const logFile = path.join(config.dataDir, 'logs', 'server.log');
-  const logger = pino({ level: logLevel }, pino.multistream([
+  const logger = pino({
+    level: logLevel,
+    serializers: { err: pino.stdSerializers.err },
+  }, pino.multistream([
     { stream: process.stdout },
     { stream: createWriteStream(logFile, { flags: 'a' }) },
   ]));
+  process.on('unhandledRejection', (reason) => logger.error({ err: reason }, 'unhandledRejection'));
+  process.on('uncaughtException', (err) => {
+    logger.fatal({ err }, 'uncaughtException');
+    process.exit(1);
+  });
   const api = createApiRouter(config, pool, logger.child({ component: 'api' }));
   const httpLogger = pinoHttp({ logger });
   const app = express();

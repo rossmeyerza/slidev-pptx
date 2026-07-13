@@ -1,0 +1,41 @@
+services:
+  app:
+    build: .
+    ports:
+      - "${PORT:-4321}:4321"
+    env_file:
+      - .env
+    environment:
+      HOST: 0.0.0.0
+      PORT: "4321"
+      SKIP_ENV_LOCAL: "true"
+    volumes:
+      - deckhand-data:/app/.data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "const p=process.env.PORT||4321;require('http').get('http://127.0.0.1:'+p+'/api/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
+  postgres:
+    image: postgres:16
+    profiles:
+      - postgres
+    environment:
+      POSTGRES_DB: "${POSTGRES_DB:-deckhand}"
+      POSTGRES_USER: "${POSTGRES_USER:-deckhand}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-change-me-before-use}"
+    volumes:
+      - deckhand-pg:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  deckhand-data:
+  deckhand-pg:

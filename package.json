@@ -12,6 +12,7 @@
     "build": "tsc",
     "build:web": "vite build --config apps/web/vite.config.js",
     "build:server": "tsc -p apps/server/tsconfig.json",
+    "backup:data": "bash scripts/backup-data.sh",
     "db:migrate": "npm run build:server && node apps/server/dist/db/migrate.js",
     "auth:schema": "npm run build:server && node apps/server/dist/auth/betterAuthSchema.js",
     "dev": "bash scripts/dev.sh",
